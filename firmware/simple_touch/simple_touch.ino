@@ -8,15 +8,18 @@
 #include <ImprovWiFiLibrary.h>
 #include <esp_mac.h>
 #include "radio.h"
+#include "motion.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="0.1.0";
+constexpr char VERSION[]="0.2.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
   String name,last="unknown";
   bool paired=false,pairSent=false;
   uint32_t sentAt=0;
+  uint16_t travelSeconds=60;
+  motion::Tracker motion;
   uint32_t physical[8]={};
   uint16_t physicalGroups[8]={};
   String source="unknown";
@@ -74,13 +77,14 @@ bool readBody(JsonDocument &doc){
 }
 bool saveRemotes(){
   JsonDocument d;JsonArray list=d["remotes"].to<JsonArray>();
-  for(auto &r:remotes)if(r.address){JsonObject o=list.add<JsonObject>();o["id"]=hexId(r.address);o["name"]=r.name;o["paired"]=r.paired;o["pair_sent"]=r.pairSent;JsonArray links=o["physical"].to<JsonArray>();for(int i=0;i<8;i++)if(r.physical[i]){JsonObject p=links.add<JsonObject>();p["id"]=hexId(r.physical[i]);p["groups"]=r.physicalGroups[i];}}
+  for(auto &r:remotes)if(r.address){JsonObject o=list.add<JsonObject>();o["id"]=hexId(r.address);o["name"]=r.name;o["paired"]=r.paired;o["pair_sent"]=r.pairSent;o["travel_time_s"]=r.travelSeconds;JsonArray links=o["physical"].to<JsonArray>();for(int i=0;i<8;i++)if(r.physical[i]){JsonObject p=links.add<JsonObject>();p["id"]=hexId(r.physical[i]);p["groups"]=r.physicalGroups[i];}}
   String s;serializeJson(d,s);return prefs.putString("remotes",s)==s.length();
 }
-void remoteJson(JsonObject o,const Remote &r){
-  o["id"]=hexId(r.address);o["name"]=r.name;o["paired"]=r.paired;o["pair_sent"]=r.pairSent;
+void remoteJson(JsonObject o,Remote &r){
+  r.motion.tick(millis());
+  o["id"]=hexId(r.address);o["name"]=r.name;o["paired"]=r.paired;o["pair_sent"]=r.pairSent;o["travel_time_s"]=r.travelSeconds;
   o["last_command"]=r.last;o["position"]=nullptr;o["next_counter"]=r.next;
-  o["state_source"]=r.source;o["assumed_state"]=r.last=="up"?"open":r.last=="down"?"closed":r.last=="favorite"?"favorite":"unknown";
+  o["state_source"]=r.source;o["assumed_state"]=r.motion.label();
   JsonArray links=o["physical"].to<JsonArray>();for(int i=0;i<8;i++)if(r.physical[i]){JsonObject p=links.add<JsonObject>();p["id"]=hexId(r.physical[i]);p["groups"]=r.physicalGroups[i];}
 }
 void stateReply(){
@@ -103,6 +107,13 @@ bool reserveCounters(Remote &r,unsigned count,uint16_t &first){
   }
   first=r.next;r.next+=count;return true;
 }
+void recordCommand(Remote &r,const String &action,const char* source,uint32_t at){
+  if(action=="up")r.motion.command(motion::Command::Up,at,r.travelSeconds*1000u);
+  else if(action=="down")r.motion.command(motion::Command::Down,at,r.travelSeconds*1000u);
+  else if(action=="stop")r.motion.command(motion::Command::Stop,at,r.travelSeconds*1000u);
+  else if(action=="favorite")r.motion.command(motion::Command::Favorite,at,r.travelSeconds*1000u);
+  r.last=action;r.sentAt=at;r.source=source;
+}
 bool transmit(Remote &r,const String &action){
   const Envelope* frames;size_t count;unsigned counters=1;
   if(action=="up"){frames=up_envelopes;count=6;counters=2;}
@@ -113,8 +124,9 @@ bool transmit(Remote &r,const String &action){
   else return false;
   uint16_t counter;
   if(!radioReady||!reserveCounters(r,counters,counter))return false;
+  uint32_t started=millis();
   if(!radio::build(frames,count,r.address,counter,action=="favorite"?0x13:0)||!radio::sendWave()){radio::receiveMode();return false;}
-  r.last=action;r.sentAt=millis();r.source="bridge";return true;
+  recordCommand(r,action,"bridge",started);return true;
 }
 void listenRadio(){
   if(!radioReady)return;
@@ -128,7 +140,7 @@ void listenRadio(){
   String action=p.action==1?"up":p.action==2?"down":p.action==3?"stop":p.action==0x13?"favorite":"";
   if(action.isEmpty())return;
   for(auto &r:remotes)if(r.address)for(int i=0;i<8;i++)if(r.physical[i]==p.address&&(r.physicalGroups[i]&p.groups)){
-    r.last=action;r.sentAt=millis();r.source="physical_remote";break;
+    recordCommand(r,action,"physical_remote",millis());break;
   }
 }
 void startAP(){
@@ -165,6 +177,8 @@ void routes(){
       if(!parseId(d["id"].as<String>(),id)||findRemote(id)||prefs.isKey(("c"+hexId(id)).c_str())||!d["next_counter"].is<uint32_t>()||d["next_counter"].as<uint32_t>()>=65535){error(400,"Invalid or previously used import identity");return;}
     }
     if(d.containsKey("next_counter")&&(!d["next_counter"].is<uint32_t>()||d["next_counter"].as<uint32_t>()>=65535)){error(400,"Invalid counter");return;}
+    if(d.containsKey("travel_time_s")&&(!d["travel_time_s"].is<unsigned>()||d["travel_time_s"].as<unsigned>()<5||d["travel_time_s"].as<unsigned>()>300)){error(400,"Travel time must be 5 to 300 seconds");return;}
+    slot->travelSeconds=d["travel_time_s"]|uint16_t(60);
     slot->address=id;slot->name=name;slot->next=d["next_counter"]|uint32_t(1);slot->paired=d["paired"]|false;
     unsigned linked=0;for(JsonObject p:d["physical"].as<JsonArray>()){if(linked>=8)break;uint32_t physicalId;if(parseId(p["id"]|"",physicalId)){slot->physical[linked]=physicalId;slot->physicalGroups[linked]=p["groups"]|uint16_t(1);linked++;}}
     if(prefs.putUInt(("c"+hexId(id)).c_str(),slot->next)!=4||!saveRemotes()){*slot=Remote();error(500,"Could not save remote");return;}
@@ -211,6 +225,12 @@ void routes(){
     }
     if(server.method()!=HTTP_POST){error(405,"Method not allowed");return;}
     JsonDocument d;if(!readBody(d))return;
+    if(operation=="travel"){
+      if(!d["travel_time_s"].is<unsigned>()||d["travel_time_s"].as<unsigned>()<5||d["travel_time_s"].as<unsigned>()>300){error(400,"Travel time must be 5 to 300 seconds");return;}
+      uint16_t previous=r->travelSeconds;r->travelSeconds=d["travel_time_s"].as<uint16_t>();
+      if(!saveRemotes()){r->travelSeconds=previous;error(500,"Could not save travel time");return;}
+      stateReply();return;
+    }
     if(operation=="learn/start"){
       learnAddress=id;learnDeadline=millis()+60000;learnCandidate=0;learnGroups=0;
       JsonDocument o;o["listening"]=true;reply(o);return;
@@ -262,7 +282,7 @@ void routes(){
       if(!r->paired&&!r->pairSent){error(409,"Pair this remote first");return;}
       uint32_t start=millis();
       if(!transmit(*r,action)){error(503,"Transmission failed or counter exhausted");return;}
-      JsonDocument o;o["sent"]=true;o["duration_ms"]=millis()-start;o["id"]=hexId(id);o["action"]=action;reply(o);return;
+      JsonDocument o;o["sent"]=true;o["duration_ms"]=millis()-start;o["id"]=hexId(id);o["action"]=action;remoteJson(o["remote"].to<JsonObject>(),*r);reply(o);return;
     }
     error(404,"Not found");
   });
@@ -278,6 +298,7 @@ void setup(){
   JsonDocument d;deserializeJson(d,prefs.getString("remotes","{}"));unsigned i=0;
   for(JsonObject o:d["remotes"].as<JsonArray>()){
     if(i>=MAX_REMOTES)break;Remote &r=remotes[i];if(!parseId(o["id"]|"",r.address))continue;
+    r.travelSeconds=o["travel_time_s"]|uint16_t(60);if(r.travelSeconds<5||r.travelSeconds>300)r.travelSeconds=60;
     r.name=o["name"]|"Shade";r.paired=o["paired"]|false;r.pairSent=o["pair_sent"]|false;r.next=r.ceiling=prefs.getUInt(("c"+hexId(r.address)).c_str(),65535);i++;
     unsigned j=0;for(JsonObject p:o["physical"].as<JsonArray>()){if(j>=8)break;uint32_t id;if(parseId(p["id"]|"",id)){r.physical[j]=id;r.physicalGroups[j]=p["groups"]|uint16_t(1);j++;}}
   }

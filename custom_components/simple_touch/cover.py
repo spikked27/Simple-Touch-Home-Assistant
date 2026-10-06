@@ -54,8 +54,19 @@ class SimpleTouchCover(CoordinatorEntity, CoverEntity):
 
     @property
     def is_closed(self):
+        state = self.remote.get("assumed_state")
+        if state is not None:
+            return True if state == "closed" else False if state in ("open", "partial") else None
         command = self.remote.get("last_command")
         return True if command == "down" else False if command == "up" else None
+
+    @property
+    def is_opening(self):
+        return self.remote.get("assumed_state") == "opening"
+
+    @property
+    def is_closing(self):
+        return self.remote.get("assumed_state") == "closing"
 
     @property
     def current_cover_position(self):
@@ -64,16 +75,19 @@ class SimpleTouchCover(CoordinatorEntity, CoverEntity):
     @property
     def extra_state_attributes(self):
         return {"last_command": self.remote.get("last_command", "unknown"), "position_feedback": False,
+                "assumed_position": self.remote.get("assumed_state", "unknown"),
+                "travel_time_seconds": self.remote.get("travel_time_s"),
                 "state_source": self.remote.get("state_source", "unknown"), "state_is_assumed": True}
 
     async def _command(self, action):
         try:
-            await self.coordinator.api.command(self.remote_id, action)
+            result = await self.coordinator.api.command(self.remote_id, action)
         except BridgeError as err:
             raise HomeAssistantError(str(err)) from err
         # Update immediately, without waiting for the periodic inventory refresh.
         data = dict(self.coordinator.data)
-        data["remotes"] = [dict(r, last_command=action, state_source="bridge") if r["id"] == self.remote_id else r
+        data["remotes"] = [dict(r, **result.get("remote", {"last_command": action, "state_source": "bridge",
+            "assumed_state": {"up": "open", "down": "closed"}.get(action, "unknown")})) if r["id"] == self.remote_id else r
                            for r in data["remotes"]]
         self.coordinator.async_set_updated_data(data)
 

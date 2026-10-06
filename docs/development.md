@@ -48,6 +48,7 @@ All endpoints except `/`, `/api/status`, and AP-only `/api/setup-key` require `A
 - `POST /api/remotes/ID/command`: `action` is `up`, `down`, `stop`, or `favorite`. Replies after the RF sequence finishes. Do not automatically retry after a timeout.
 - Physical remote links: POST `learn/start` opens a 60-second listening session, `learn/status` reports a candidate STOP identity, `learn/confirm` saves it, and `learn/remove` takes an `id` to unlink. These operations never transmit RF.
 - Pairing: `pair/arm` returns a 120-second one-use `ticket`; `pair/send` consumes it; `pair/confirm` requires `two_jogs: true`.
+- `POST /api/remotes/ID/travel`: `travel_time_s` is an integer from 5 to 300, default 60. Saved in NVS and included in backups. Running travel windows keep their original duration.
 - `POST /api/remotes/ID/rename`, `DELETE /api/remotes/ID`.
 - `GET /api/backup`: records with reserved next counters; no Wi-Fi credentials or bridge key.
 - `POST /api/wifi`, `/api/radio`, `/api/restart`; multipart `POST /api/update` for application firmware.

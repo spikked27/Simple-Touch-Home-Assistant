@@ -1,6 +1,6 @@
 # Testing status
 
-Version 0.1.0 is experimental. Keep these evidence levels separate.
+Version 0.2.0 is experimental. Keep these evidence levels separate.
 
 ## Verified on a physical shade with the radio-lab firmware
 
@@ -16,6 +16,7 @@ Version 0.1.0 is experimental. Keep these evidence levels separate.
 - Firmware flashed and booted on the XIAO ESP32-S3 with DIO flash mode. USB encoder/decoder self-test passes.
 - CC1101 received and decoded all three packets from one physical Remote 1 STOP press.
 - Browser-based Improv Wi-Fi provisioning completed on the board.
+- User completed a fresh installation from the public HTTPS installer, Wi-Fi setup, guided shade pairing, and linking two physical remotes on v0.1.0; reported all working.
 - The standalone bridge's Wi-Fi API controlled Open/Stop, Close/Stop, and Favorite, with user-observed motor movement.
 - Physical Remote 1 was linked using STOP; subsequent received commands updated the bridge state with `physical_remote` as the source.
 - The virtual identity, physical remote link, and radio calibration survived restart. Commands remained accepted after the counter jumped to its reserved value.
@@ -25,9 +26,17 @@ Version 0.1.0 is experimental. Keep these evidence levels separate.
 - HTTP client tests cover authentication, malformed inventory, no credential redirects, no automatic command retries, and transmission acknowledgements.
 - GitHub Actions checks protocol vectors, firmware compilation and integration metadata.
 
+## Version 0.2.0 changes
+
+- Per-shade assumed travel window defaults to 60 seconds. Stop before expiry assumes partial; Stop after expiry preserves the endpoint. Favorite and restart do not invent a known position.
+- Physical-remote linking is visible on each shade card.
+- Home Assistant mDNS discovery pre-fills the bridge address and prompts only for its key.
+- Automated tests cover timer boundaries, repeats, reversals, clock rollover, and Home Assistant discovery flows.
+
 ## Still requires live validation
 
 - OTA update through the bridge web interface.
+- Version 0.2.0 timing behavior and mDNS discovery on a live Home Assistant installation.
 - Home Assistant entity setup, automatic discovery of newly paired shades, unavailable/recovery behavior and reboot persistence.
 - Multiple shades, range and coexistence with physical remotes.
 - Physical-remote mapping and Home Assistant state updates end to end.

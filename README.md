@@ -19,9 +19,9 @@ Local Home Assistant control for Simple Touch motorized shades, using an ESP32 a
 - Browser Wi-Fi provisioning via Improv Serial, plus an authenticated setup hotspot fallback.
 - Remote backup/import and authenticated firmware updates from the bridge interface.
 
-There is **no motor position feedback**. Open and Close set an assumed endpoint state; Stop and Favorite leave the position unknown. There is no percentage slider. The bridge can listen for linked physical remotes between its own transmissions; physical-remote reception and bridge state updates have been verified on the tested hardware. Missed RF commands, power loss and obstructions can make assumed states inaccurate. Speed, limit adjustment and motor-reset commands are not exposed.
+There is **no motor position feedback**. Open and Close start an assumed travel window (60 seconds by default). Stop during that window assumes partially open; once it expires, the endpoint is assumed reached and later Stop presses preserve it. Adjust full travel time per shade in Shade settings. Favorite has an unknown position. After bridge restart, position starts unknown. There is no percentage slider. The bridge can listen for linked physical remotes between its own transmissions; physical-remote reception and bridge state updates have been verified on the tested hardware. Missed RF commands, power loss and obstructions can make assumed states inaccurate. Speed, limit adjustment and motor-reset commands are not exposed.
 
-To link a physical remote, open the shade’s settings, choose **Physical remotes → Link physical remote**, and briefly tap **STOP** on the existing remote. Confirm the detected remote. This only records a mapping in the bridge; it does not change motor pairing. Use the same channel you normally use for that shade. Up to eight physical remote/channel links can be stored per shade.
+To link a physical remote, choose **Link physical remote** directly on its shade card, and briefly tap **STOP** on the existing remote. Confirm the detected remote. This only records a mapping in the bridge; it does not change motor pairing. Use the same channel you normally use for that shade. Up to eight physical remote/channel links can be stored per shade.
 
 ## Hardware
 
@@ -78,8 +78,10 @@ Only the intended shade should be powered during pairing. **The same sequence ca
 
 1. Click **Add to HACS** above, or add this repository manually in HACS as an **Integration**.
 2. Download Simple Touch and restart Home Assistant.
-3. Go to **Settings → Devices & services → Add integration → Simple Touch**.
-4. Enter the bridge's local address and its key from **Bridge settings → Home Assistant**.
+3. Open **Settings → Devices & services** and select the discovered **Simple Touch** bridge.
+4. Paste its key from **Bridge settings → Home Assistant**. Its address is filled in automatically.
+
+Discovery needs local mDNS connectivity between Home Assistant and the bridge. If your network blocks discovery, use **Add integration → Simple Touch** and enter the local address manually.
 
 Paired shades appear as cover entities. Newly paired shades are discovered within five seconds; commands are sent immediately rather than waiting for that inventory poll. The integration's Configure page and each shade's device page link back to the bridge interface.
 

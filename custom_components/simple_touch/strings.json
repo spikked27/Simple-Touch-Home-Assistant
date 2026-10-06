@@ -2,12 +2,56 @@
   "title": "Simple Touch",
   "config": {
     "step": {
-      "user": {"title": "Connect your Simple Touch bridge", "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings → Home Assistant.", "data": {"host": "Bridge address", "api_key": "Bridge key"}},
-      "reconfigure": {"title": "Update bridge connection", "data": {"host": "Bridge address", "api_key": "Bridge key"}},
-      "reauth_confirm": {"title": "Reconnect your bridge", "description": "Enter the current bridge key.", "data": {"host": "Bridge address", "api_key": "Bridge key"}}
+      "user": {
+        "title": "Connect your Simple Touch bridge",
+        "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings → Home Assistant.",
+        "data": {
+          "host": "Bridge address",
+          "api_key": "Bridge key"
+        }
+      },
+      "reconfigure": {
+        "title": "Update bridge connection",
+        "data": {
+          "host": "Bridge address",
+          "api_key": "Bridge key"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect your bridge",
+        "description": "Enter the current bridge key.",
+        "data": {
+          "host": "Bridge address",
+          "api_key": "Bridge key"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Connect your discovered bridge",
+        "description": "Your Simple Touch bridge was found automatically. Copy its key from [Bridge settings → Home Assistant]({url}) and paste it below.",
+        "data": {
+          "api_key": "Bridge key"
+        }
+      }
     },
-    "error": {"cannot_connect": "Could not reach the bridge. Check its address and that Home Assistant can access its network.", "invalid_auth": "The bridge key is incorrect.", "wrong_bridge": "This address belongs to a different bridge. Add it as a new integration."},
-    "abort": {"already_configured": "This bridge is already configured.", "reauth_successful": "Bridge connection updated.", "reconfigure_successful": "Bridge connection updated."}
+    "error": {
+      "cannot_connect": "Could not reach the bridge. Check its address and that Home Assistant can access its network.",
+      "invalid_auth": "The bridge key is incorrect.",
+      "wrong_bridge": "This address belongs to a different bridge. Add it as a new integration."
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured.",
+      "reauth_successful": "Bridge connection updated.",
+      "reconfigure_successful": "Bridge connection updated.",
+      "invalid_discovery": "The discovered device did not provide a valid Simple Touch bridge identity."
+    },
+    "flow_title": "{name}"
   },
-  "options": {"step": {"init": {"title": "Manage your shades", "description": "[Open your bridge]({url}) to add shades, follow guided pairing, rename remotes, or download a backup. New paired shades appear here automatically.\n\nUse Reconfigure from the integration menu to change its address or bridge key."}}}
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage your shades",
+        "description": "[Open your bridge]({url}) to add shades, follow guided pairing, rename remotes, or download a backup. New paired shades appear here automatically.\n\nUse Reconfigure from the integration menu to change its address or bridge key."
+      }
+    }
+  }
 }

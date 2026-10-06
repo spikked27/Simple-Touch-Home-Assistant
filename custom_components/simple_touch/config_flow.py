@@ -2,6 +2,7 @@
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -19,13 +20,52 @@ def schema(host=""):
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo):
+        """Offer a discovered bridge without exposing its private key over mDNS."""
+        identity = discovery_info.properties.get("id", "")
+        if not isinstance(identity, str):
+            return self.async_abort(reason="invalid_discovery")
+        identity = identity.lower()
+        if len(identity) != 12 or any(c not in "0123456789abcdef" for c in identity):
+            return self.async_abort(reason="invalid_discovery")
+        host = discovery_info.host
+        if ":" in host:
+            host = f"[{host}]"
+        self._discovered_host = normalize_host(f"http://{host}:{discovery_info.port or 80}")
+        self._discovered_id = identity
+        await self.async_set_unique_id(identity)
+        self._abort_if_unique_id_configured(updates={CONF_HOST: self._discovered_host})
+        self.context["title_placeholders"] = {"name": f"Simple Touch {identity[-6:]}"}
+        return await self.async_step_discovery_confirm()
+
+    async def async_step_discovery_confirm(self, user_input=None):
+        errors = {}
+        if user_input is not None:
+            try:
+                data = await BridgeApi(async_get_clientsession(self.hass), self._discovered_host,
+                                       user_input[CONF_KEY]).state()
+                if data["device_id"] != self._discovered_id:
+                    errors["base"] = "wrong_bridge"
+                else:
+                    self._abort_if_unique_id_configured(updates={CONF_HOST: self._discovered_host})
+                    return self.async_create_entry(title=data.get("name", "Simple Touch"),
+                        data={CONF_HOST: self._discovered_host, CONF_KEY: user_input[CONF_KEY]})
+            except BridgeAuthError:
+                errors["base"] = "invalid_auth"
+            except (BridgeError, ValueError):
+                errors["base"] = "cannot_connect"
+        return self.async_show_form(step_id="discovery_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_KEY): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD))}),
+            errors=errors, description_placeholders={"url": self._discovered_host})
+
     async def async_step_user(self, user_input=None):
         errors = {}
         if user_input:
             try:
                 host = normalize_host(user_input[CONF_HOST])
                 data = await BridgeApi(async_get_clientsession(self.hass), host, user_input[CONF_KEY]).state()
-                await self.async_set_unique_id(data["device_id"])
+                await self.async_set_unique_id(data["device_id"], raise_on_progress=False)
                 self._abort_if_unique_id_configured(updates={CONF_HOST: host})
                 return self.async_create_entry(title=data.get("name", "Simple Touch"),
                                               data={CONF_HOST: host, CONF_KEY: user_input[CONF_KEY]})

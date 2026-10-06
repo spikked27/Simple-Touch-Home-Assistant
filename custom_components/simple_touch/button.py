@@ -51,10 +51,10 @@ class FavoriteButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self):
         try:
-            await self.coordinator.api.command(self.remote_id, "favorite")
+            result = await self.coordinator.api.command(self.remote_id, "favorite")
         except BridgeError as err:
             raise HomeAssistantError(str(err)) from err
         data = dict(self.coordinator.data)
-        data["remotes"] = [dict(r, last_command="favorite", state_source="bridge") if r["id"] == self.remote_id else r
+        data["remotes"] = [dict(r, **result.get("remote", {"last_command": "favorite", "state_source": "bridge", "assumed_state": "favorite"})) if r["id"] == self.remote_id else r
                            for r in data["remotes"]]
         self.coordinator.async_set_updated_data(data)
