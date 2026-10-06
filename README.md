@@ -23,6 +23,16 @@ To link a physical remote, open the shade’s settings, choose **Physical remote
 
 ## Hardware
 
+### Recognize the tested remote
+
+The verified remote has **Simple Touch** branding, three diamond-shaped Up / Stop / Down buttons, and two **P2** buttons inside the battery compartment. These photos show the actual remote used for testing.
+
+| Front | Battery compartment and P2 buttons |
+| --- | --- |
+| <img src="docs/images/simple-touch-remote-front.jpg" alt="White Simple Touch remote with three diamond-shaped buttons" width="260"> | <img src="docs/images/simple-touch-remote-p2.jpg" alt="Back of Simple Touch remote showing two P2 buttons above the batteries" width="260"> |
+
+Matching appearance is a useful first check, not proof of RF compatibility. This identifies the tested Simple Touch-branded remote; the original equipment manufacturer is not established by the branding alone. Avoid testing P2 casually: the programming sequence can add or remove a paired remote.
+
 The initial supported board is the **Seeed XIAO ESP32-S3**, with a 433 MHz CC1101 module and suitable antenna. Use 3.3 V power and logic.
 
 | CC1101 | XIAO ESP32-S3 |

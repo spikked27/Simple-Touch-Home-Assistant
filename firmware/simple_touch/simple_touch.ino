@@ -309,4 +309,5 @@ void serialCommand(const String &line){
     p[5]^=1;ok=ok&&!protocol::decode(p,decoded);Serial.printf("DECODE_TEST=%s\n",ok?"PASS":"FAIL");
   }
   if(line=="RXSTATUS")Serial.printf("RADIO=%d RX=%lu STATE=%02x FIFO=%02x\n",radioReady,(unsigned long)rxPackets,radio::readReg(0x35),radio::readReg(0x3b));
+  if(line=="NETSTATUS")Serial.printf("WIFI=%d MODE=%d IP=%s GATEWAY=%s RSSI=%d UPTIME=%lu HEAP=%lu\n",WiFi.status(),WiFi.getMode(),WiFi.localIP().toString().c_str(),WiFi.gatewayIP().toString().c_str(),WiFi.RSSI(),(unsigned long)(millis()/1000),(unsigned long)ESP.getFreeHeap());
 }
