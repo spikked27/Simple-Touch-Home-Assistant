@@ -12,7 +12,7 @@
 #include "motion.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="0.3.0";
+constexpr char VERSION[]="0.4.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
@@ -43,6 +43,27 @@ uint32_t learnAddress=0,learnDeadline=0,learnCandidate=0,rxPackets=0;
 uint16_t learnGroups=0;
 struct Seen {uint32_t address=0;uint16_t counter=0;uint32_t at=0;};
 Seen seen[16];unsigned seenIndex=0;
+struct RadioPacket {uint8_t bytes[21];uint32_t at;};
+QueueHandle_t radioQueue=nullptr;
+uint32_t rxInvalid=0,rxDuplicates=0,rxMatched=0,lastRxAt=0,maxDispatchMs=0;
+uint32_t rxQueueDrops=0;
+struct RadioTrace {protocol::Received packet{};uint32_t at=0;};
+RadioTrace rxTrace[32];unsigned rxTraceIndex=0;
+void listenRadio();
+// Only this task drains the FIFO. HTTP, OTA and slow clients cannot block it.
+// All SPI users take the same mutex; shade state remains owned by loop().
+void receiveTask(void*){
+  for(;;){
+    {radio::Lock lock;
+      for(int i=0;i<8;i++){
+        RadioPacket packet{};if(!radio::readPacket(packet.bytes))break;
+        packet.at=millis();
+        if(xQueueSend(radioQueue,&packet,0)!=pdTRUE)rxQueueDrops++;
+      }
+    }
+    vTaskDelay(1);
+  }
+}
 void serialCommand(const String &line);
 class ConsoleStream : public Stream {
   String line;
@@ -93,11 +114,15 @@ void remoteJson(JsonObject o,Remote &r){
   JsonArray links=o["physical"].to<JsonArray>();for(int i=0;i<8;i++)if(r.physical[i]){JsonObject p=links.add<JsonObject>();p["id"]=hexId(r.physical[i]);p["groups"]=r.physicalGroups[i];}
 }
 void stateReply(){
+  listenRadio();
   JsonDocument d;d["device_id"]=deviceId;d["name"]="Simple Touch Bridge";d["version"]=VERSION;d["api_version"]=1;
   d["radio_ready"]=radioReady;d["frequency_hz"]=frequency;d["uptime_s"]=millis()/1000;
   d["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
   d["wifi_connected"]=WiFi.status()==WL_CONNECTED;d["max_remotes"]=MAX_REMOTES;
   d["received_packets"]=rxPackets;d["favorite_supported"]=true;
+  d["received_commands"]=rxMatched;d["invalid_packets"]=rxInvalid;
+  d["last_received_ms"]=lastRxAt;d["max_receive_dispatch_ms"]=maxDispatchMs;
+  {radio::Lock lock;d["rx_overflows"]=radio::overflows;d["rx_queue_drops"]=rxQueueDrops;}
   JsonArray list=d["remotes"].to<JsonArray>();for(auto &r:remotes)if(r.address)remoteJson(list.add<JsonObject>(),r);
   reply(d);
 }
@@ -120,6 +145,7 @@ void recordCommand(Remote &r,const String &action,const char* source,uint32_t at
   r.last=action;r.sentAt=at;r.source=source;
 }
 bool transmit(Remote &r,const String &action){
+  listenRadio();
   const Envelope* frames;size_t count;unsigned counters=1;
   if(action=="up"){frames=up_envelopes;count=6;counters=2;}
   else if(action=="down"){frames=down_envelopes;count=6;counters=2;}
@@ -130,23 +156,29 @@ bool transmit(Remote &r,const String &action){
   uint16_t counter;
   if(!radioReady||!reserveCounters(r,counters,counter))return false;
   uint32_t started=millis();
+  radio::Lock lock;
   if(!radio::build(frames,count,r.address,counter,action=="favorite"?0x13:0)||!radio::sendWave()){radio::receiveMode();return false;}
   recordCommand(r,action,"bridge",started);return true;
 }
-void listenRadio(){
-  if(!radioReady)return;
-  uint8_t bytes[21];if(!radio::readPacket(bytes))return;
-  protocol::Received p;if(!protocol::decode(bytes,p))return;rxPackets++;
+void processRadioPacket(const RadioPacket &raw){
+  protocol::Received p;if(!protocol::decode(raw.bytes,p)){rxInvalid++;return;}rxPackets++;
+  lastRxAt=raw.at;maxDispatchMs=max(maxDispatchMs,uint32_t(millis()-raw.at));
+  rxTrace[rxTraceIndex++%32]={p,raw.at};
   // Repeated packets of a held STOP must not replace its later favorite action.
-  for(const auto &s:seen)if(s.address==p.address&&s.counter==p.counter&&millis()-s.at<30000)return;
-  seen[seenIndex++%16]={p.address,p.counter,millis()};
+  for(const auto &s:seen)if(s.address==p.address&&s.counter==p.counter&&raw.at-s.at<30000){rxDuplicates++;return;}
+  seen[seenIndex++%16]={p.address,p.counter,raw.at};
   if(findRemote(p.address))return; // Ignore our own virtual identities.
   if(learnAddress&&int32_t(millis()-learnDeadline)<0&&p.action==3&&!learnCandidate){learnCandidate=p.address;learnGroups=p.groups;}
   String action=p.action==1?"up":p.action==2?"down":p.action==3?"stop":p.action==0x13?"favorite":"";
   if(action.isEmpty())return;
   for(auto &r:remotes)if(r.address)for(int i=0;i<8;i++)if(r.physical[i]==p.address&&(r.physicalGroups[i]&p.groups)){
-    recordCommand(r,action,"physical_remote",millis());break;
+      recordCommand(r,action,"physical_remote",raw.at);rxMatched++;break;
   }
+}
+void listenRadio(){
+  if(!radioReady||!radioQueue)return;
+  RadioPacket packet;
+  for(int i=0;i<128&&xQueueReceive(radioQueue,&packet,0)==pdTRUE;i++)processRadioPacket(packet);
 }
 void startAP(){
   WiFi.mode(WIFI_AP_STA);WiFi.softAP(("SimpleTouch-"+deviceId.substring(deviceId.length()-6)).c_str(),apPassword.c_str());
@@ -163,6 +195,18 @@ void routes(){
     JsonDocument d;d["key"]=apiKey;reply(d);
   });
   server.on("/api/state",HTTP_GET,[]{if(auth())stateReply();});
+  server.on("/api/diagnostics",HTTP_GET,[]{
+    if(!auth())return;listenRadio();JsonDocument d;
+    d["received_packets"]=rxPackets;d["invalid_packets"]=rxInvalid;d["duplicates"]=rxDuplicates;
+    d["matched_commands"]=rxMatched;d["max_dispatch_ms"]=maxDispatchMs;
+    {radio::Lock lock;d["overflows"]=radio::overflows;d["queue_drops"]=rxQueueDrops;
+      d["unstable_reads"]=radio::unstableReads;d["radio_state"]=radio::readReg(0x35)&31;}
+    auto packets=d["recent_packets"].to<JsonArray>();unsigned n=min(rxTraceIndex,32u);
+    for(unsigned i=0;i<n;i++){const auto &t=rxTrace[(rxTraceIndex-n+i)%32];auto p=packets.add<JsonObject>();
+      p["at_ms"]=t.at;p["address"]=hexId(t.packet.address);p["counter"]=t.packet.counter;
+      p["action"]=t.packet.action;p["groups"]=t.packet.groups;}
+    reply(d);
+  });
   server.on("/api/wifi",HTTP_POST,[]{
     if(!auth())return;JsonDocument d;if(!readBody(d))return;
     String ssid=d["ssid"]|"",pass=d["password"]|"";
@@ -193,7 +237,7 @@ void routes(){
     if(!auth())return;JsonDocument d;if(!readBody(d))return;uint32_t hz=d["frequency_hz"]|uint32_t(0);
     if(hz<433000000||hz>434790000){error(400,"Frequency outside supported range");return;}
     if(prefs.putUInt("frequency",hz)!=4){error(500,"Could not save radio setting");return;}
-    frequency=hz;radio::idle();radio::setFrequency(hz);radio::strobe(0x33);radio::state(1,20000);radio::receiveMode();stateReply();
+    frequency=hz;{radio::Lock lock;radio::idle();radio::setFrequency(hz);radio::strobe(0x33);radio::state(1,20000);radio::receiveMode();}stateReply();
   });
   server.on("/api/backup",HTTP_GET,[]{
     if(!auth())return;JsonDocument d;d["format"]=1;d["frequency_hz"]=frequency;
@@ -352,6 +396,10 @@ void setup(){
   lastWifiAttempt=millis();
   radioReady=radio::begin(frequency);
   if(radioReady)radioReady=radio::receiveMode();
+  if(radioReady){
+    radioQueue=xQueueCreate(128,sizeof(RadioPacket));
+    radioReady=radioQueue&&xTaskCreate(receiveTask,"radio-rx",4096,nullptr,2,nullptr)==pdPASS;
+  }
   routes();server.begin();
   String deviceUrl="http://{LOCAL_IPV4}/#key="+apiKey;
   improv.setDeviceInfo(ImprovTypes::ChipFamily::CF_ESP32_S3,"Simple Touch",VERSION,"Simple Touch Bridge",deviceUrl.c_str());
@@ -381,6 +429,6 @@ void serialCommand(const String &line){
     protocol::Received decoded{};bool ok=protocol::decode(p,decoded)&&decoded.address==0x12345600&&decoded.counter==23&&decoded.action==3;
     p[5]^=1;ok=ok&&!protocol::decode(p,decoded);Serial.printf("DECODE_TEST=%s\n",ok?"PASS":"FAIL");
   }
-  if(line=="RXSTATUS")Serial.printf("RADIO=%d RX=%lu STATE=%02x FIFO=%02x\n",radioReady,(unsigned long)rxPackets,radio::readReg(0x35),radio::readReg(0x3b));
+  if(line=="RXSTATUS"){radio::Lock lock;Serial.printf("RADIO=%d RX=%lu INVALID=%lu MATCHED=%lu OVERFLOW=%lu DROPS=%lu STATE=%02x FIFO=%02x\n",radioReady,(unsigned long)rxPackets,(unsigned long)rxInvalid,(unsigned long)rxMatched,(unsigned long)radio::overflows,(unsigned long)rxQueueDrops,radio::readReg(0x35),radio::readReg(0x3b));}
   if(line=="NETSTATUS")Serial.printf("WIFI=%d MODE=%d IP=%s GATEWAY=%s RSSI=%d UPTIME=%lu HEAP=%lu REASON=%u\n",WiFi.status(),WiFi.getMode(),WiFi.localIP().toString().c_str(),WiFi.gatewayIP().toString().c_str(),WiFi.RSSI(),(unsigned long)(millis()/1000),(unsigned long)ESP.getFreeHeap(),lastWifiDisconnect);
 }

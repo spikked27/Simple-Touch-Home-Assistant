@@ -19,7 +19,7 @@ The RF module uses the Arduino ESP32 RMT peripheral at 1 MHz with 25 microsecond
 
 The build produces `simple_touch.ino.merged.bin`. Copy it to `site/firmware.bin` after validating flash mode and board settings. `simple_touch.ino.bin` is the application-only image for authenticated web OTA. Keep filenames and manifest versions aligned. Never distribute a full flash dump: it can contain saved Wi-Fi credentials, bridge keys and paired identities.
 
-The Checks workflow builds the firmware and publishes `site/` to GitHub Pages only after tests, hassfest, HACS validation, and firmware compilation pass. Repository maintainers enable this once under **Settings → Pages → Build and deployment → Source → GitHub Actions**. Pull requests never publish the installer.
+The Checks workflow builds the firmware and publishes `site/` to GitHub Pages only after tests, hassfest, HACS validation, and firmware compilation pass. Repository maintainers enable this once under **Settings â†’ Pages â†’ Build and deployment â†’ Source â†’ GitHub Actions**. Pull requests never publish the installer.
 
 End users visit the hosted installer directly. They do not download the website, run a local server, or install Arduino tools. A localhost server is only useful for developing this page. The browser-installer artifact remains available for maintainers and offline hosting.
 
@@ -58,3 +58,11 @@ Pending pairing state survives restart. A repeated send is rejected until its re
 ## Browser firmware updates
 
 `package_update.py` generates `site/updates.json` and a SHA-256-addressed application image. Pages publication waits for all checks. The browser fetches only the fixed public Pages origin with credentials omitted, then uploads to the local bridge with its existing bearer key. The authenticated update route checks `X-Firmware-Size` and `X-Firmware-SHA256` before `Update.end`; SHA-256 is integrity checking, not firmware signing. No remote identities, Wi-Fi settings, or keys are sent to GitHub. `GET /api/status` includes a per-boot nonce so the page can confirm restart.
+
+## Radio reception
+
+A dedicated FreeRTOS task drains complete 21-byte packets plus two status bytes from the CC1101 FIFO into a 128-entry queue. RX, TX, calibration and USB diagnostics share one SPI mutex. The Arduino loop owns remote mappings, deduplication and assumed motion state. Captured timestamps are preserved across queueing. The radio cannot receive during its own transmissions.
+
+Status-register reads use two matching samples, as required by [TI CC1101 errata SWRZ020E](https://www.ti.com/lit/swrz020). The authenticated `GET /api/diagnostics` reports counts and recent decoded packets. The browser and HA each poll once per second; browser requests never overlap, and unchanged cards are not replaced.
+
+Never commit household RF captures, private identities, bridge keys or backups. Use synthetic protocol fixtures in public tests.

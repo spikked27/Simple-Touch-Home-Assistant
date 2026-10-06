@@ -1,6 +1,6 @@
 # Testing status
 
-Version 0.3.0 is experimental. Keep these evidence levels separate.
+Version 0.4.0 prepares the v1.0 release. Keep these evidence levels separate.
 
 ## Verified on a physical shade with the radio-lab firmware
 
@@ -20,7 +20,7 @@ Version 0.3.0 is experimental. Keep these evidence levels separate.
 - The standalone bridge's Wi-Fi API controlled Open/Stop, Close/Stop, and Favorite, with user-observed motor movement.
 - Physical Remote 1 was linked using STOP; subsequent received commands updated the bridge state with `physical_remote` as the source.
 - The virtual identity, physical remote link, and radio calibration survived restart. Commands remained accepted after the counter jumped to its reserved value.
-- Observed local HTTP round trips were about 0.49–0.52 seconds for Open/Close, 0.39–0.41 seconds for Stop, and 0.27 seconds for Favorite. These include transmission completion, not a measurement of when the motor begins moving.
+- Observed local HTTP round trips were about 0.49â€“0.52 seconds for Open/Close, 0.39â€“0.41 seconds for Stop, and 0.27 seconds for Favorite. These include transmission completion, not a measurement of when the motor begins moving.
 - Web interface add/pair/confirm and ordinary controls exercised against an isolated fixture.
 - Favorite button and STOP-based physical-remote linking exercised against an isolated fixture.
 - HTTP client tests cover authentication, malformed inventory, no credential redirects, no automatic command retries, and transmission acknowledgements.
@@ -41,12 +41,21 @@ Version 0.3.0 is experimental. Keep these evidence levels separate.
 - Release metadata pins the board, image size and SHA-256; the ESP32 verifies the digest before activating firmware.
 - Automated tests cover release validation, version ordering, credential isolation, malformed downloads and generated package metadata.
 
-## Still requires live validation
+## Reception and display regression (0.4.0)
 
-- OTA update through the bridge web interface.
-- Version 0.2.0 timing behavior and mDNS discovery on a live Home Assistant installation.
-- Home Assistant entity setup, automatic discovery of newly paired shades, unavailable/recovery behavior and reboot persistence.
-- Multiple shades, range and coexistence with physical remotes.
-- Physical-remote mapping and Home Assistant state updates end to end.
+- Reproduced on v0.3.0: physical Down/Stop and Up/Stop updated bridge state promptly, while the user observed a delayed webpage. Five-second UI polling could hide the intermediate movement state.
+- Installed the receiver-task and one-second-refresh build through authenticated OTA. Both configured shades, all three physical-remote mappings, and travel settings survived unchanged.
+- The user confirmed the webpage was much faster after refreshing it.
+- A logged run decoded 44 packets and applied 10 mapped commands, with zero invalid packets, FIFO overflows, or receive-queue drops. Maximum capture-to-dispatch delay was 6 ms in that run. This is not an RF-range or motor-latency guarantee.
+- Protocol and motion tests cover packet validation, Stop before/after timeout, repeat commands, reversal and clock rollover. A real Home Assistant test harness checks that a received Stop changes Closing to Open with `assumed_position: partial` on the next short poll.
 
-No position feedback or universal Dooya compatibility is claimed. Do not present a successful mock test or compile as a physical-device test.
+## Transmission regression
+
+- Webpage Open/Stop, Close/Stop and Favorite were retested after the receiver change; the user confirmed all controls worked.
+
+## Remaining release checks
+
+- Install the updated integration in the user's Home Assistant and verify physical-remote state changes there.
+- Longer range/interference testing and compatibility with additional shade models remain community validation work.
+
+No position feedback or universal Dooya compatibility is claimed. Mock tests, builds and user-observed motor tests are recorded separately.

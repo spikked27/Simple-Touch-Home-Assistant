@@ -7,6 +7,12 @@
 constexpr int SCK_PIN=D8, MISO_PIN=D9, MOSI_PIN=D10, CS_PIN=D5, DATA_PIN=D2;
 constexpr uint32_t MAX_US=3000000, MAX_ITEMS=10000, MAX_BURSTS=32;
 namespace radio {
+SemaphoreHandle_t mutex=nullptr;
+struct Lock {
+  Lock(){if(mutex)xSemaphoreTake(mutex,portMAX_DELAY);}
+  ~Lock(){if(mutex)xSemaphoreGive(mutex);}
+};
+uint32_t overflows=0, unstableReads=0;
 SPISettings spiSettings(1000000, MSBFIRST, SPI_MODE0);
 rmt_data_t wave[MAX_ITEMS];
 struct Burst { uint32_t start, count, duration, gap; };
@@ -41,8 +47,12 @@ bool receiveMode(){
   strobe(0x3a);strobe(0x34);return state(0x0d,10000);
 }
 bool readPacket(uint8_t packet[21]){
-  uint8_t count=readReg(0x3b);
-  if(count&0x80){receiveMode();return false;}
+  // CC1101 errata SWRZ020E: asynchronously updated status registers must be
+  // sampled until two consecutive reads agree. Never read an incomplete packet.
+  uint8_t count=readReg(0x3b);bool stable=false;
+  for(int i=0;i<8;i++){uint8_t next=readReg(0x3b);if(next==count){stable=true;break;}count=next;}
+  if(!stable){unstableReads++;return false;}
+  if((count&0x80)||(count&0x7f)>64){overflows++;receiveMode();return false;}
   if((count&0x7f)<23)return false;
   if(!selectRadio())return false;
   SPI.transfer(0xff);for(int i=0;i<23;i++){uint8_t b=SPI.transfer(0);if(i<21)packet[i]=b;}deselectRadio();
@@ -100,6 +110,7 @@ bool sendWave(){
 }
 
 bool begin(uint32_t frequency) {
+  mutex=xSemaphoreCreateMutex();if(!mutex)return false;
   pinMode(CS_PIN,OUTPUT);digitalWrite(CS_PIN,HIGH);
   SPI.begin(SCK_PIN,MISO_PIN,MOSI_PIN,CS_PIN);
   pinMode(DATA_PIN,OUTPUT);digitalWrite(DATA_PIN,LOW);

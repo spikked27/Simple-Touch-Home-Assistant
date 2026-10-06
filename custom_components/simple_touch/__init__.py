@@ -18,7 +18,7 @@ class BridgeCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
         import logging
         super().__init__(hass, logging.getLogger(__name__), name=DOMAIN,
-                         update_interval=timedelta(seconds=5))
+                         update_interval=timedelta(seconds=1))
         self.api = BridgeApi(async_get_clientsession(hass), entry.data[CONF_HOST], entry.data[CONF_KEY])
 
     async def _async_update_data(self):
