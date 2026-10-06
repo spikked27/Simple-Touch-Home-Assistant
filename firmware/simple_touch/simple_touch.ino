@@ -13,7 +13,7 @@
 #include "local_access.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="1.1.0";
+constexpr char VERSION[]="1.1.1";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;

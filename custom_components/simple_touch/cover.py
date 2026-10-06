@@ -56,9 +56,11 @@ class SimpleTouchCover(CoordinatorEntity, CoverEntity):
     def is_closed(self):
         state = self.remote.get("assumed_state")
         if state is not None:
-            return True if state == "closed" else False if state in ("open", "partial") else None
+            # HA has no partial/favorite cover state. Treat an unknown position
+            # as assumed open; availability independently handles offline devices.
+            return state == "closed"
         command = self.remote.get("last_command")
-        return True if command == "down" else False if command == "up" else None
+        return command == "down"
 
     @property
     def is_opening(self):
@@ -87,7 +89,7 @@ class SimpleTouchCover(CoordinatorEntity, CoverEntity):
         # Update immediately, without waiting for the periodic inventory refresh.
         data = dict(self.coordinator.data)
         data["remotes"] = [dict(r, **result.get("remote", {"last_command": action, "state_source": "bridge",
-            "assumed_state": {"up": "open", "down": "closed"}.get(action, "unknown")})) if r["id"] == self.remote_id else r
+            "assumed_state": {"up": "open", "down": "closed", "favorite": "favorite"}.get(action, "unknown")})) if r["id"] == self.remote_id else r
                            for r in data["remotes"]]
         self.coordinator.async_set_updated_data(data)
 

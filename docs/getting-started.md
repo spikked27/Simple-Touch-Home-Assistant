@@ -96,3 +96,25 @@ This recalls the favorite stored in the motor; it is not necessarily 50%. Percen
 **Visit device** opens the webpage without a key prompt when your browser is on the bridge's subnet. Use its local IP address or `.local` hostname. The page obtains its connection key automatically, including after an erase and fresh setup. The key remains available in Settings for Home Assistant setup.
 
 Local-network clients are trusted to manage the bridge. Routed networks and reverse proxies require a key. Control APIs retain bearer authentication; automatic local access rejects foreign Host/Origin headers and does not enable cross-origin access. Home Assistant 2025.10 or newer is required.
+
+## Scheduler Card
+
+[Scheduler Card](https://github.com/nielsfaber/scheduler-card#customize) supports the Favorite action through its `customize` configuration. It does not automatically add custom integration actions to its built-in cover choices. Merge this into your existing card YAML, replacing the entity ID with your Simple Touch shade; repeat the entry for each shade. Keep your existing card options and custom actions.
+
+```yaml
+type: custom:scheduler-card
+include:
+  - cover.living_room_shades
+customize:
+  cover.living_room_shades:
+    actions:
+      - service: simple_touch.favorite
+        name: Favorite position
+        icon: mdi:star
+```
+
+The card supplies the chosen entity ID automatically. Favorite is added alongside the standard Open, Close, and Stop actions, without a position slider. This example follows the card's documented custom-action interface; dashboard-specific setup is separate from installing Simple Touch.
+
+## Home Assistant state labels
+
+Home Assistant displays Favorite, Partial, and unknown positions as **Open** (assumed). Inspect `assumed_position` for `favorite`, `partial`, or `unknown`. Opening, Closing, and Closed keep their normal states. An offline bridge remains **Unavailable**. An assumed Open label never promises a fully raised shade or a measured percentage.

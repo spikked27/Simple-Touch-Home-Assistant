@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Show Favorite and unknown positions as assumed Open in Home Assistant. Keep real offline state Unavailable.
+- Add Scheduler Card Favorite configuration example.
+- No firmware update required for this integration fix.
+
 ## 1.1.0
 
 - Favorite action for shade covers in Home Assistant automations, without percentage controls.
