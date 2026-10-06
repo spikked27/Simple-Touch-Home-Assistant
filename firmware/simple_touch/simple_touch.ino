@@ -27,6 +27,8 @@ WebServer server(80);
 String deviceId,hostname,apiKey,apPassword;
 bool radioReady=false,apActive=false,otaAllowed=false;
 uint32_t apConnectedAt=0,rebootAt=0,frequency=433925000;
+uint32_t lastWifiAttempt=0;
+volatile uint8_t lastWifiDisconnect=0;
 uint32_t pairAddress=0,pairDeadline=0;
 String pairTicket;
 uint32_t learnAddress=0,learnDeadline=0,learnCandidate=0,rxPackets=0;
@@ -279,9 +281,11 @@ void setup(){
     r.name=o["name"]|"Shade";r.paired=o["paired"]|false;r.pairSent=o["pair_sent"]|false;r.next=r.ceiling=prefs.getUInt(("c"+hexId(r.address)).c_str(),65535);i++;
     unsigned j=0;for(JsonObject p:o["physical"].as<JsonArray>()){if(j>=8)break;uint32_t id;if(parseId(p["id"]|"",id)){r.physical[j]=id;r.physicalGroups[j]=p["groups"]|uint16_t(1);j++;}}
   }
+  WiFi.onEvent([](WiFiEvent_t event,WiFiEventInfo_t info){if(event==ARDUINO_EVENT_WIFI_STA_DISCONNECTED)lastWifiDisconnect=info.wifi_sta_disconnected.reason;});
   WiFi.setHostname(hostname.c_str());WiFi.setAutoReconnect(true);
   String ssid=prefs.getString("ssid","");if(ssid.isEmpty())startAP();else{WiFi.mode(WIFI_STA);WiFi.begin(ssid.c_str(),prefs.getString("wifiPass","").c_str());}
   WiFi.setSleep(false);
+  lastWifiAttempt=millis();
   radioReady=radio::begin(frequency);
   if(radioReady)radioReady=radio::receiveMode();
   routes();server.begin();
@@ -293,6 +297,11 @@ void setup(){
 void loop(){
   listenRadio();
   server.handleClient();
+  if(WiFi.status()==WL_CONNECTED)lastWifiAttempt=millis();
+  else if(millis()-lastWifiAttempt>=20000){
+    lastWifiAttempt=millis();String ssid=prefs.getString("ssid","");
+    if(!ssid.isEmpty()){String password=prefs.getString("wifiPass","");WiFi.disconnect(false,false);WiFi.begin(ssid.c_str(),password.c_str());}
+  }
   static bool mdns=false;
   if(WiFi.status()==WL_CONNECTED&&!mdns){mdns=MDNS.begin(hostname.c_str());if(mdns){MDNS.addService("simpletouch","tcp",80);MDNS.addServiceTxt("simpletouch","tcp","id",deviceId);}}
   if(apActive&&WiFi.status()==WL_CONNECTED){if(!apConnectedAt)apConnectedAt=millis();if(millis()-apConnectedAt>120000){WiFi.softAPdisconnect(true);apActive=false;}}
@@ -309,5 +318,5 @@ void serialCommand(const String &line){
     p[5]^=1;ok=ok&&!protocol::decode(p,decoded);Serial.printf("DECODE_TEST=%s\n",ok?"PASS":"FAIL");
   }
   if(line=="RXSTATUS")Serial.printf("RADIO=%d RX=%lu STATE=%02x FIFO=%02x\n",radioReady,(unsigned long)rxPackets,radio::readReg(0x35),radio::readReg(0x3b));
-  if(line=="NETSTATUS")Serial.printf("WIFI=%d MODE=%d IP=%s GATEWAY=%s RSSI=%d UPTIME=%lu HEAP=%lu\n",WiFi.status(),WiFi.getMode(),WiFi.localIP().toString().c_str(),WiFi.gatewayIP().toString().c_str(),WiFi.RSSI(),(unsigned long)(millis()/1000),(unsigned long)ESP.getFreeHeap());
+  if(line=="NETSTATUS")Serial.printf("WIFI=%d MODE=%d IP=%s GATEWAY=%s RSSI=%d UPTIME=%lu HEAP=%lu REASON=%u\n",WiFi.status(),WiFi.getMode(),WiFi.localIP().toString().c_str(),WiFi.gatewayIP().toString().c_str(),WiFi.RSSI(),(unsigned long)(millis()/1000),(unsigned long)ESP.getFreeHeap(),lastWifiDisconnect);
 }
