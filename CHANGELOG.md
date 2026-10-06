@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Verified restart controls in the bridge webpage and Home Assistant.
+- Bridge diagnostics for Wi-Fi, IP, uptime, reset reason, update status, and radio health.
+- Restart verified firmware independently of the HTTP response, and pause HA inventory polling during maintenance.
+
 ## 1.1.1
 
 - Show Favorite and unknown positions as assumed Open in Home Assistant. Keep real offline state Unavailable.

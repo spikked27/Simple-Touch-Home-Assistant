@@ -7,13 +7,15 @@
 #include <Update.h>
 #include <ImprovWiFiLibrary.h>
 #include <esp_mac.h>
+#include <esp_timer.h>
+#include <esp_system.h>
 #include <mbedtls/sha256.h>
 #include "radio.h"
 #include "motion.h"
 #include "local_access.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="1.1.1";
+constexpr char VERSION[]="1.2.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
@@ -31,7 +33,10 @@ Preferences prefs;
 WebServer server(80);
 String deviceId,hostname,apiKey,apPassword,bootId;
 bool radioReady=false,apActive=false,otaAllowed=false;
-bool otaFinished=false;
+bool otaFinished=false,otaCommitted=false,otaHashActive=false;
+String otaStage="idle";
+esp_timer_handle_t restartTimer=nullptr;
+int32_t cachedRssi=0;uint32_t lastRssiAt=0;
 String otaError,otaExpectedHash;
 size_t otaBytes=0,otaExpectedSize=0;
 mbedtls_sha256_context otaHash;
@@ -117,9 +122,14 @@ void remoteJson(JsonObject o,Remote &r){
 void stateReply(){
   listenRadio();
   JsonDocument d;d["device_id"]=deviceId;d["name"]="Simple Touch Bridge";d["version"]=VERSION;d["api_version"]=1;
-  d["radio_ready"]=radioReady;d["frequency_hz"]=frequency;d["uptime_s"]=millis()/1000;
+  d["radio_ready"]=radioReady;d["frequency_hz"]=frequency;d["uptime_s"]=uint64_t(esp_timer_get_time()/1000000);
   d["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
-  d["wifi_connected"]=WiFi.status()==WL_CONNECTED;d["max_remotes"]=MAX_REMOTES;
+  d["wifi_connected"]=WiFi.status()==WL_CONNECTED;
+  if(WiFi.status()==WL_CONNECTED){
+    if(!lastRssiAt||millis()-lastRssiAt>=10000){cachedRssi=WiFi.RSSI();lastRssiAt=millis();}
+    d["wifi_rssi"]=cachedRssi;
+  }else d["wifi_rssi"]=nullptr;
+  d["reset_reason"]=resetReason();lifecycleJson(d);d["max_remotes"]=MAX_REMOTES;
   d["received_packets"]=rxPackets;d["favorite_supported"]=true;
   d["received_commands"]=rxMatched;d["invalid_packets"]=rxInvalid;
   d["last_received_ms"]=lastRxAt;d["max_receive_dispatch_ms"]=maxDispatchMs;
@@ -187,10 +197,32 @@ void startAP(){
   apActive=true;apConnectedAt=0;
   Serial.printf("SETUP_AP SimpleTouch-%s password=%s URL=http://192.168.4.1\n",deviceId.substring(deviceId.length()-6).c_str(),apPassword.c_str());
 }
+const char* resetReason(){
+  switch(esp_reset_reason()){
+    case ESP_RST_POWERON:return "Power on";
+    case ESP_RST_SW:return "Software restart";
+    case ESP_RST_PANIC:return "Crash";
+    case ESP_RST_INT_WDT:case ESP_RST_TASK_WDT:case ESP_RST_WDT:return "Watchdog";
+    case ESP_RST_BROWNOUT:return "Brownout";
+    case ESP_RST_DEEPSLEEP:return "Deep sleep";
+    default:return "Other";
+  }
+}
+bool scheduleRestart(){
+  if(rebootAt)return true;
+  if(!restartTimer || esp_timer_start_once(restartTimer,2000000)!=ESP_OK)return false;
+  rebootAt=millis()+2000;
+  return true;
+}
+void lifecycleJson(JsonDocument &d){
+  d["boot_id"]=bootId;d["update_state"]=otaError.isEmpty()?otaStage:String("failed");
+  d["update_error"]=otaError;d["update_received_bytes"]=otaBytes;d["update_expected_bytes"]=otaExpectedSize;
+  d["restart_pending"]=rebootAt!=0;d["restart_supported"]=restartTimer!=nullptr;
+}
 void routes(){
   const char* headers[]={"Authorization","X-Firmware-SHA256","X-Firmware-Size","X-SimpleTouch-UI","Origin","Forwarded","X-Forwarded-For"};server.collectHeaders(headers,7);
   server.on("/",HTTP_GET,[]{server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",WEB_UI);});
-  server.on("/api/status",HTTP_GET,[]{JsonDocument d;d["device_id"]=deviceId;d["version"]=VERSION;d["api_version"]=1;d["boot_id"]=bootId;reply(d);});
+  server.on("/api/status",HTTP_GET,[]{JsonDocument d;d["device_id"]=deviceId;d["version"]=VERSION;d["api_version"]=1;lifecycleJson(d);reply(d);});
   server.on("/api/local-access",HTTP_GET,[]{
     uint32_t peer=uint32_t(server.client().remoteIP());
     bool nearby=(WiFi.status()==WL_CONNECTED && local_access::subnet(peer,uint32_t(WiFi.localIP()),uint32_t(WiFi.subnetMask()))) ||
@@ -253,19 +285,27 @@ void routes(){
     for(auto &r:remotes)if(r.address){JsonObject o=list.add<JsonObject>();remoteJson(o,r);o["next_counter"]=max(r.ceiling,r.next);}
     server.sendHeader("Content-Disposition","attachment; filename=simple-touch-backup.json");reply(d);
   });
-  server.on("/api/restart",HTTP_POST,[]{if(!auth())return;JsonDocument d;d["restarting"]=true;reply(d);rebootAt=millis()+500;});
+  server.on("/api/restart",HTTP_POST,[]{
+    if(!auth())return;
+    if(otaStage=="receiving"&&otaError.isEmpty()){error(409,"Firmware upload is in progress");return;}
+    if(!scheduleRestart()){error(503,"Restart timer unavailable");return;}
+    JsonDocument d;d["restarting"]=true;reply(d);
+  });
   server.on("/api/update",HTTP_POST,[]{
     if(!auth())return;
     const bool success=otaAllowed&&otaFinished&&otaError.isEmpty()&&!Update.hasError();
     otaAllowed=false;otaFinished=false;
     if(!success){error(400,otaError.isEmpty()?"No complete firmware upload received":otaError.c_str());return;}
-    JsonDocument d;d["restarting"]=true;reply(d);rebootAt=millis()+1000;
+    JsonDocument d;d["restarting"]=rebootAt!=0;reply(d);
   },[]{
     HTTPUpload &u=server.upload();
     if(u.status==UPLOAD_FILE_START){
       otaAllowed=server.header("Authorization")=="Bearer "+apiKey;
-      otaFinished=false;otaError="";otaBytes=0;otaExpectedSize=0;
       if(!otaAllowed)return;
+      otaFinished=false;otaCommitted=false;otaError="";otaBytes=0;otaExpectedSize=0;
+      if(otaHashActive){mbedtls_sha256_free(&otaHash);otaHashActive=false;}
+      if(rebootAt){otaAllowed=false;return;}
+      otaStage="receiving";
       otaExpectedHash=server.header("X-Firmware-SHA256");otaExpectedHash.toLowerCase();
       String sizeText=server.header("X-Firmware-Size");
       if(!otaExpectedHash.isEmpty()){
@@ -280,29 +320,38 @@ void routes(){
         if(otaExpectedSize<65536||otaExpectedSize>3342336)otaError="Firmware does not fit this board";
       }
       if(!otaError.isEmpty())return;
-      mbedtls_sha256_init(&otaHash);
+      mbedtls_sha256_init(&otaHash);otaHashActive=true;
       if(mbedtls_sha256_starts(&otaHash,0)!=0)otaError="Could not initialize firmware verification";
-      if(otaError.isEmpty()&&!Update.begin(otaExpectedSize?otaExpectedSize:UPDATE_SIZE_UNKNOWN))otaError="Could not start firmware update";
+      if(otaError.isEmpty()&&!Update.begin(otaExpectedSize?otaExpectedSize:UPDATE_SIZE_UNKNOWN))otaError=String("Could not start firmware update: ")+Update.errorString();
     }else if(otaAllowed&&u.status==UPLOAD_FILE_WRITE&&otaError.isEmpty()){
       otaBytes+=u.currentSize;
       if((otaExpectedSize&&otaBytes>otaExpectedSize)||mbedtls_sha256_update(&otaHash,u.buf,u.currentSize)!=0||Update.write(u.buf,u.currentSize)!=u.currentSize){
-        otaError="Firmware upload failed";Update.abort();
+        otaError=String("Firmware upload failed: ")+Update.errorString();Update.abort();
       }
     }else if(otaAllowed&&u.status==UPLOAD_FILE_END){
       if(otaError.isEmpty()){
-        uint8_t digest[32];char hex[65];
+        otaStage="verifying";uint8_t digest[32];char hex[65];
         if(mbedtls_sha256_finish(&otaHash,digest)!=0)otaError="Firmware verification failed";
         else {
           for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);
           if((otaExpectedSize&&otaBytes!=otaExpectedSize)||(!otaExpectedHash.isEmpty()&&otaExpectedHash!=hex))otaError="Firmware checksum or size did not match";
         }
         if(!otaError.isEmpty())Update.abort();
-        else if(!Update.end(true))otaError="Firmware image was not accepted";
-        else otaFinished=true;
+        else if(!Update.end(true))otaError=String("Firmware image was not accepted: ")+Update.errorString();
+        else {
+          otaFinished=otaCommitted=true;otaStage="restarting";
+          prefs.putBool("otaPending",true);
+          // Arm before the HTTP completion handler: a lost final response must
+          // not leave verified firmware waiting forever for a manual restart.
+          if(!scheduleRestart())otaError="Firmware verified; restart timer unavailable. Restart the bridge manually.";
+        }
       }
-      mbedtls_sha256_free(&otaHash);
-    }else if(u.status==UPLOAD_FILE_ABORTED&&otaAllowed){
-      Update.abort();mbedtls_sha256_free(&otaHash);otaAllowed=false;otaFinished=false;otaError="Upload interrupted";
+      if(otaHashActive){mbedtls_sha256_free(&otaHash);otaHashActive=false;}
+      Serial.printf("UPDATE end bytes=%u expected=%u committed=%d error=%s\n",unsigned(otaBytes),unsigned(otaExpectedSize),otaCommitted,otaError.c_str());
+    }else if(u.status==UPLOAD_FILE_ABORTED&&otaAllowed&&!otaCommitted){
+      Update.abort();if(otaHashActive){mbedtls_sha256_free(&otaHash);otaHashActive=false;}
+      otaAllowed=false;otaFinished=false;otaError="Upload interrupted before verification";
+      Serial.printf("UPDATE aborted bytes=%u expected=%u\n",unsigned(otaBytes),unsigned(otaExpectedSize));
     }
   });
   server.onNotFound([]{
@@ -384,6 +433,9 @@ void routes(){
 }
 void setup(){
   Serial.begin(115200);bootId=randomSecret();prefs.begin("simpletouch",false);
+  if(prefs.getBool("otaPending",false)){otaStage="completed";prefs.remove("otaPending");}
+  esp_timer_create_args_t timerArgs{};timerArgs.callback=[](void*){ESP.restart();};timerArgs.name="bridge-restart";
+  if(esp_timer_create(&timerArgs,&restartTimer)!=ESP_OK)restartTimer=nullptr;
   uint8_t mac[6];esp_read_mac(mac,ESP_MAC_WIFI_STA);char identity[13];
   snprintf(identity,sizeof(identity),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);deviceId=identity;
   hostname="simpletouch-"+deviceId.substring(deviceId.length()-6);
@@ -438,5 +490,6 @@ void serialCommand(const String &line){
     p[5]^=1;ok=ok&&!protocol::decode(p,decoded);Serial.printf("DECODE_TEST=%s\n",ok?"PASS":"FAIL");
   }
   if(line=="RXSTATUS"){radio::Lock lock;Serial.printf("RADIO=%d RX=%lu INVALID=%lu MATCHED=%lu OVERFLOW=%lu DROPS=%lu STATE=%02x FIFO=%02x\n",radioReady,(unsigned long)rxPackets,(unsigned long)rxInvalid,(unsigned long)rxMatched,(unsigned long)radio::overflows,(unsigned long)rxQueueDrops,radio::readReg(0x35),radio::readReg(0x3b));}
+  if(line=="UPDATESTATUS")Serial.printf("UPDATE stage=%s bytes=%u expected=%u committed=%d restarting=%d error=%s\n",otaStage.c_str(),unsigned(otaBytes),unsigned(otaExpectedSize),otaCommitted,rebootAt!=0,otaError.c_str());
   if(line=="NETSTATUS")Serial.printf("WIFI=%d MODE=%d IP=%s GATEWAY=%s RSSI=%d UPTIME=%lu HEAP=%lu REASON=%u\n",WiFi.status(),WiFi.getMode(),WiFi.localIP().toString().c_str(),WiFi.gatewayIP().toString().c_str(),WiFi.RSSI(),(unsigned long)(millis()/1000),(unsigned long)ESP.getFreeHeap(),lastWifiDisconnect);
 }

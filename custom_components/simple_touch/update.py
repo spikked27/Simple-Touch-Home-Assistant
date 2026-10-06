@@ -1,7 +1,5 @@
 """Native Home Assistant firmware update availability and installation."""
-import asyncio
 from datetime import timedelta
-import time
 
 from homeassistant.components.update import UpdateDeviceClass, UpdateEntity, UpdateEntityFeature
 from homeassistant.const import EntityCategory
@@ -13,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import BridgeError, BridgeUpdateUncertain
 from .const import DOMAIN
 from .firmware import download_release, latest_release
+from .maintenance import wait_for_restart
 
 SCAN_INTERVAL = timedelta(hours=1)
 
@@ -60,7 +59,7 @@ class BridgeFirmware(CoordinatorEntity, UpdateEntity):
             self._attr_latest_version = None
 
     async def async_install(self, version, backup, **kwargs):
-        if self.in_progress:
+        if self.in_progress or self.coordinator.maintenance:
             raise HomeAssistantError("A firmware update is already running")
         if not self.release or not self.version_is_newer(self.release['version'], self.installed_version):
             raise HomeAssistantError("No newer firmware update is available")
@@ -71,25 +70,24 @@ class BridgeFirmware(CoordinatorEntity, UpdateEntity):
         release = dict(self.release)
         self._attr_in_progress = True
         self.async_write_ha_state()
+        self.coordinator.maintenance = True
         try:
             image = await download_release(async_get_clientsession(self.hass), release)
+            before = await self.coordinator.api.status()
             try:
                 await self.coordinator.api.upload_firmware(image, release['sha256'])
             except BridgeUpdateUncertain:
                 pass  # Never send the upload again; verify whether it succeeded.
-            deadline = time.monotonic() + 90
-            while time.monotonic() < deadline:
-                await asyncio.sleep(2)
-                try:
-                    state = await self.coordinator.api.state()
-                    if state.get('version') == release['version']:
-                        self.coordinator.async_set_updated_data(state)
-                        return
-                except BridgeError:
-                    continue
-            raise BridgeError("Update not confirmed. Check bridge power and Wi-Fi, then its installed version before retrying.")
+            status = await wait_for_restart(self.coordinator.api, before, release['version'])
+            data = dict(self.coordinator.data, **status)
+            try:
+                data = await self.coordinator.api.state()
+            except BridgeError:
+                pass  # Version and boot are verified; polling refreshes inventory.
+            self.coordinator.async_set_updated_data(data)
         except BridgeError as err:
             raise HomeAssistantError(str(err)) from err
         finally:
+            self.coordinator.maintenance = False
             self._attr_in_progress = False
             self.async_write_ha_state()

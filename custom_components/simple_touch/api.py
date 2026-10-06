@@ -16,6 +16,10 @@ class BridgeUpdateUncertain(BridgeError):
     """Upload connection was lost; check the version instead of retrying."""
 
 
+class BridgeRestartUncertain(BridgeError):
+    """Restart response was lost; verify the boot identity instead of resending."""
+
+
 def normalize_host(value: str) -> str:
     value = value.strip().rstrip("/")
     if "://" not in value:
@@ -65,6 +69,24 @@ class BridgeApi:
                 raise BridgeError("Invalid remote list")
         return data
 
+    async def status(self) -> dict:
+        data = await self.request("status")
+        if not data.get("boot_id") or not data.get("version"):
+            raise BridgeError("Bridge did not report its boot identity")
+        return data
+
+    async def restart(self) -> None:
+        try:
+            async with self.session.post(self.host + "/api/restart", json={},
+                headers={"Authorization": "Bearer " + self.key},
+                timeout=aiohttp.ClientTimeout(total=10), allow_redirects=False) as response:
+                if response.status in (401, 403):
+                    raise BridgeAuthError("Bridge key rejected")
+                if response.status != 200 or (await response.json()).get("restarting") is not True:
+                    raise BridgeError("Bridge did not acknowledge restart")
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise BridgeRestartUncertain("Restart response lost; checking boot identity") from err
+
     async def command(self, remote: str, action: str) -> dict:
         if action not in ("up", "down", "stop", "favorite"):
             raise ValueError("Unsupported command")
@@ -81,7 +103,7 @@ class BridgeApi:
             async with self.session.post(self.host + "/api/update", data=form,
                 headers={"Authorization": "Bearer " + self.key,
                          "X-Firmware-SHA256": sha256, "X-Firmware-Size": str(len(image))},
-                timeout=aiohttp.ClientTimeout(total=120), allow_redirects=False) as response:
+                timeout=aiohttp.ClientTimeout(total=180), allow_redirects=False) as response:
                 if response.status in (401, 403):
                     raise BridgeAuthError("Bridge key rejected")
                 if response.status != 200 or (await response.json()).get("restarting") is not True:

@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import BridgeApi, BridgeAuthError, BridgeError
 from .const import CONF_HOST, CONF_KEY, DOMAIN
 
-PLATFORMS = [Platform.COVER, Platform.BUTTON, Platform.UPDATE]
+PLATFORMS = [Platform.COVER, Platform.BUTTON, Platform.UPDATE, Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config) -> bool:
@@ -29,8 +29,12 @@ class BridgeCoordinator(DataUpdateCoordinator):
         super().__init__(hass, logging.getLogger(__name__), name=DOMAIN,
                          update_interval=timedelta(seconds=1))
         self.api = BridgeApi(async_get_clientsession(hass), entry.data[CONF_HOST], entry.data[CONF_KEY])
+        self.maintenance = False
 
     async def _async_update_data(self):
+        # Avoid a queue of inventory requests competing with a firmware upload.
+        if self.maintenance:
+            return self.data
         try:
             return await self.api.state()
         except BridgeAuthError as err:

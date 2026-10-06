@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Connect your Simple Touch bridge",
-        "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings \u00e2\u2020\u2019 Home Assistant.",
+        "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings \u2192 Home Assistant.",
         "data": {
           "host": "Bridge address",
           "api_key": "Bridge key"
@@ -27,7 +27,7 @@
       },
       "discovery_confirm": {
         "title": "Connect your discovered bridge",
-        "description": "Your Simple Touch bridge was found automatically. Copy its key from [Bridge settings \u00e2\u2020\u2019 Home Assistant]({url}) and paste it below.",
+        "description": "Your Simple Touch bridge was found automatically. Copy its key from [Bridge settings \u2192 Home Assistant]({url}) and paste it below.",
         "data": {
           "api_key": "Bridge key"
         }

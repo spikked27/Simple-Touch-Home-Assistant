@@ -21,6 +21,8 @@ async def test_update_entity_and_install(hass, enable_custom_integrations):
     with patch('custom_components.simple_touch.api.BridgeApi.state', return_value=STATE) as state, \
          patch('custom_components.simple_touch.update.latest_release',return_value=RELEASE), \
          patch('custom_components.simple_touch.update.download_release',return_value=IMAGE), \
+         patch('custom_components.simple_touch.api.BridgeApi.status', side_effect=[
+             dict(version='0.2.0', boot_id='before'), dict(version='0.3.0', boot_id='after')]), \
          patch('custom_components.simple_touch.api.BridgeApi.upload_firmware') as upload:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()

@@ -118,3 +118,11 @@ The card supplies the chosen entity ID automatically. Favorite is added alongsid
 ## Home Assistant state labels
 
 Home Assistant displays Favorite, Partial, and unknown positions as **Open** (assumed). Inspect `assumed_position` for `favorite`, `partial`, or `unknown`. Opening, Closing, and Closed keep their normal states. An offline bridge remains **Unavailable**. An assumed Open label never promises a fully raised shade or a measured percentage.
+
+## Restart and diagnostics
+
+Use **Bridge settings → Restart bridge**, or the **Restart** button on the Home Assistant bridge device. The interfaces wait for a new boot identity; a request acknowledgement alone is not treated as a confirmed restart. Saved shades, remote links, counters, and Wi-Fi settings are retained. Position is assumed Open in Home Assistant until commands establish another state.
+
+Home Assistant's bridge device includes diagnostic Wi-Fi signal (dBm), IP address, uptime (whole minutes), last reset reason, update status, and Radio problem entities. Radio problem reports initialization failure, not measured RF coverage. FIFO overflow and receive queue drop counters are optional disabled entities. Diagnostics use the existing local poll; uptime changes once a minute, and RSSI is sampled every ten seconds. Update status attributes include upload byte counts and any error. An offline bridge makes diagnostics unavailable.
+
+During a firmware update, Home Assistant pauses inventory polling. Confirmation requires a new boot with the requested version. If an upload fails, check Update status and the installed version before retrying; a restart cannot install an incomplete image. The firmware restart timer is armed only after image validation succeeds.
