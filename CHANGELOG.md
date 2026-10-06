@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Favorite action for shade covers in Home Assistant automations, without percentage controls.
+- Automatic webpage connection on the bridge local network.
+- Requires Home Assistant 2025.10 or newer.
+
 ## Unreleased — preparing v1.0
 
 - Separate CC1101 reception from web requests, with a bounded receive queue and shared SPI lock.

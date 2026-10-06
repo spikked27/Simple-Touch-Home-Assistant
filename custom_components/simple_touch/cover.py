@@ -99,3 +99,7 @@ class SimpleTouchCover(CoordinatorEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs):
         await self._command("stop")
+
+    async def async_favorite_position(self, **kwargs):
+        """Recall the motor's saved favorite without claiming a percentage."""
+        await self._command("favorite")

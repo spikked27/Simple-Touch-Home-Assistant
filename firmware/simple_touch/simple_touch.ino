@@ -10,9 +10,10 @@
 #include <mbedtls/sha256.h>
 #include "radio.h"
 #include "motion.h"
+#include "local_access.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="1.0.0";
+constexpr char VERSION[]="1.1.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
@@ -187,12 +188,18 @@ void startAP(){
   Serial.printf("SETUP_AP SimpleTouch-%s password=%s URL=http://192.168.4.1\n",deviceId.substring(deviceId.length()-6).c_str(),apPassword.c_str());
 }
 void routes(){
-  const char* headers[]={"Authorization","X-Firmware-SHA256","X-Firmware-Size"};server.collectHeaders(headers,3);
+  const char* headers[]={"Authorization","X-Firmware-SHA256","X-Firmware-Size","X-SimpleTouch-UI","Origin","Forwarded","X-Forwarded-For"};server.collectHeaders(headers,7);
   server.on("/",HTTP_GET,[]{server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",WEB_UI);});
   server.on("/api/status",HTTP_GET,[]{JsonDocument d;d["device_id"]=deviceId;d["version"]=VERSION;d["api_version"]=1;d["boot_id"]=bootId;reply(d);});
-  server.on("/api/setup-key",HTTP_GET,[]{
-    IPAddress ip=server.client().remoteIP();
-    if(!apActive||ip[0]!=192||ip[1]!=168||ip[2]!=4){error(403,"Join the bridge setup Wi-Fi first");return;}
+  server.on("/api/local-access",HTTP_GET,[]{
+    uint32_t peer=uint32_t(server.client().remoteIP());
+    bool nearby=(WiFi.status()==WL_CONNECTED && local_access::subnet(peer,uint32_t(WiFi.localIP()),uint32_t(WiFi.subnetMask()))) ||
+      (apActive && local_access::subnet(peer,uint32_t(WiFi.softAPIP()),uint32_t(IPAddress(255,255,255,0))));
+    if(!local_access::allowed(nearby,server.hostHeader().c_str(),WiFi.localIP().toString().c_str(),
+        apActive?WiFi.softAPIP().toString().c_str():"",hostname.c_str(),server.header("Origin").c_str(),
+        server.header("X-SimpleTouch-UI").c_str(),server.hasHeader("Forwarded")||server.hasHeader("X-Forwarded-For"))){
+      error(403,"Open the bridge's local IP address on its Wi-Fi network");return;
+    }
     JsonDocument d;d["key"]=apiKey;reply(d);
   });
   server.on("/api/state",HTTP_GET,[]{if(auth())stateReply();});

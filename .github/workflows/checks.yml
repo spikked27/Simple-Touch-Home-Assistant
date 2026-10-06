@@ -14,6 +14,7 @@ jobs:
       - run: python -m unittest discover -s tests -p 'test_*.py' -v
       - run: g++ -std=c++17 -Wall -Wextra -Werror tests/protocol_test.cpp -o /tmp/protocol-test && /tmp/protocol-test
       - run: g++ -std=c++17 -Wall -Wextra -Werror tests/motion_test.cpp -o /tmp/motion-test && /tmp/motion-test
+      - run: g++ -std=c++17 -Wall -Wextra -Werror tests/local_access_test.cpp -o /tmp/local-access-test && /tmp/local-access-test
       - run: python -m compileall -q custom_components
       - run: node --test tests/updater_test.cjs
       - run: python scripts/embed_web.py && git diff --exit-code firmware/simple_touch/web_ui.h

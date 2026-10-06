@@ -1,0 +1,7 @@
+favorite:
+  name: Go to favorite position
+  description: Move the selected shades to their saved favorite position.
+  target:
+    entity:
+      integration: simple_touch
+      domain: cover

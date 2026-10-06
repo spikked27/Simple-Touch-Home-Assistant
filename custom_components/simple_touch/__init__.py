@@ -5,6 +5,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import service
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -12,6 +13,14 @@ from .api import BridgeApi, BridgeAuthError, BridgeError
 from .const import CONF_HOST, CONF_KEY, DOMAIN
 
 PLATFORMS = [Platform.COVER, Platform.BUTTON, Platform.UPDATE]
+
+
+async def async_setup(hass: HomeAssistant, config) -> bool:
+    service.async_register_platform_entity_service(
+        hass, DOMAIN, "favorite", entity_domain=Platform.COVER,
+        schema={}, func="async_favorite_position",
+    )
+    return True
 
 
 class BridgeCoordinator(DataUpdateCoordinator):

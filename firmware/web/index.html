@@ -118,5 +118,5 @@ async function installLatest(){
 $('#installAvailable').onclick=installLatest;
 window.addEventListener('beforeunload',e=>{if(updateInProgress){e.preventDefault();e.returnValue='';}});
 
-(async()=>{if(!key){try{const r=await fetch('/api/setup-key');if(r.ok){key=(await r.json()).key;sessionStorage.setItem('simpletouch-key',key);}}catch{}}await refresh();checkUpdates();setInterval(checkUpdates,30*60*1000);poll=setInterval(()=>{if(!busy&&!document.hidden)refresh();},1000);})();
+(async()=>{try{const r=await fetch('/api/local-access',{headers:{'X-SimpleTouch-UI':'1'}});if(r.ok){key=(await r.json()).key;sessionStorage.setItem('simpletouch-key',key);}}catch{}await refresh();checkUpdates();setInterval(checkUpdates,30*60*1000);poll=setInterval(()=>{if(!busy&&!document.hidden)refresh();},1000);})();
 </script></body></html>

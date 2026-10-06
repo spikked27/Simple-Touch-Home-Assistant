@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Connect your Simple Touch bridge",
-        "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings → Home Assistant.",
+        "description": "Enter the ESP32 bridge address on your local network. Find its bridge key in the bridge web interface under Settings \u00e2\u2020\u2019 Home Assistant.",
         "data": {
           "host": "Bridge address",
           "api_key": "Bridge key"
@@ -27,7 +27,7 @@
       },
       "discovery_confirm": {
         "title": "Connect your discovered bridge",
-        "description": "Your Simple Touch bridge was found automatically. Copy its key from [Bridge settings → Home Assistant]({url}) and paste it below.",
+        "description": "Your Simple Touch bridge was found automatically. Copy its key from [Bridge settings \u00e2\u2020\u2019 Home Assistant]({url}) and paste it below.",
         "data": {
           "api_key": "Bridge key"
         }
@@ -52,6 +52,12 @@
         "title": "Manage your shades",
         "description": "[Open your bridge]({url}) to add shades, follow guided pairing, rename remotes, or download a backup. New paired shades appear here automatically.\n\nUse Reconfigure from the integration menu to change its address or bridge key."
       }
+    }
+  },
+  "services": {
+    "favorite": {
+      "name": "Go to favorite position",
+      "description": "Move the selected shades to their saved favorite position."
     }
   }
 }

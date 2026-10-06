@@ -1,0 +1,7 @@
+{
+  "services": {
+    "favorite": {
+      "service": "mdi:star"
+    }
+  }
+}

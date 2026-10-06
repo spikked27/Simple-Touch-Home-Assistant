@@ -78,3 +78,21 @@ The RF sequence itself takes roughly 0.2–0.45 seconds. The bridge generates it
 
 Counters are reserved in blocks in NVS before transmission. A restart skips unused values rather than reusing them. At counter exhaustion, commands fail explicitly; they do not silently wrap. The tested motor accepted commands after a restart and counter skip. A backup must not be used on two active bridges with the same remote identities.
 
+
+## Schedule the favorite position
+
+In a Home Assistant automation, choose **Add action → Simple Touch: Go to favorite position**, then select the shade or shades. Add a time or sunrise trigger as usual. The existing Favorite position button also works with **Button: Press**.
+
+```yaml
+action: simple_touch.favorite
+target:
+  entity_id: cover.living_room_shades
+```
+
+This recalls the favorite stored in the motor; it is not necessarily 50%. Percentage positioning is not supported and no slider is advertised.
+
+## Open the bridge locally
+
+**Visit device** opens the webpage without a key prompt when your browser is on the bridge's subnet. Use its local IP address or `.local` hostname. The page obtains its connection key automatically, including after an erase and fresh setup. The key remains available in Settings for Home Assistant setup.
+
+Local-network clients are trusted to manage the bridge. Routed networks and reverse proxies require a key. Control APIs retain bearer authentication; automatic local access rejects foreign Host/Origin headers and does not enable cross-origin access. Home Assistant 2025.10 or newer is required.

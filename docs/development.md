@@ -41,7 +41,7 @@ The UI preview at `http://127.0.0.1:18888` is isolated from hardware and cannot 
 
 ## API version 1
 
-All endpoints except `/`, `/api/status`, and AP-only `/api/setup-key` require `Authorization: Bearer BRIDGE_KEY`.
+All endpoints except `/`, `/api/status`, and `/api/local-access` require `Authorization: Bearer BRIDGE_KEY`. Local access returns the key only to clients on the bridge subnet (or setup hotspot), using its IP/hostname, the `X-SimpleTouch-UI: 1` header, and a matching Origin if present. Foreign hosts, cross-origin requests, and forwarded requests are rejected. CORS is not enabled. The webpage refreshes its session key at startup, including after an erase; command requests are never automatically retried.
 
 - `GET /api/state`: bridge health and remote inventory.
 - `POST /api/remotes`: create with `name`, or import with `id`, `next_counter`, `paired`.
