@@ -12,7 +12,7 @@
 #include "motion.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="0.4.0";
+constexpr char VERSION[]="1.0.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
@@ -145,6 +145,8 @@ void recordCommand(Remote &r,const String &action,const char* source,uint32_t at
   r.last=action;r.sentAt=at;r.source=source;
 }
 bool transmit(Remote &r,const String &action){
+  // Finish processing older received commands before recording this transmission.
+  radio::Lock lock;
   listenRadio();
   const Envelope* frames;size_t count;unsigned counters=1;
   if(action=="up"){frames=up_envelopes;count=6;counters=2;}
@@ -156,7 +158,6 @@ bool transmit(Remote &r,const String &action){
   uint16_t counter;
   if(!radioReady||!reserveCounters(r,counters,counter))return false;
   uint32_t started=millis();
-  radio::Lock lock;
   if(!radio::build(frames,count,r.address,counter,action=="favorite"?0x13:0)||!radio::sendWave()){radio::receiveMode();return false;}
   recordCommand(r,action,"bridge",started);return true;
 }

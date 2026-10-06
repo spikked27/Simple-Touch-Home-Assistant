@@ -11,7 +11,7 @@
 
 Add Home Assistant control to compatible Simple Touch motorized shades with a small ESP32 + CC1101 bridge. Create virtual remotes, pair shades, and link your existing remotes in a guided web interface. No cloud account, MQTT broker, or configuration files.
 
-**Preparing for v1.0.** Core shade control has been tested on real hardware. Physical-remote responsiveness is undergoing regression testing; see [testing status](docs/testing.md) for verified behavior and remaining checks.
+**Version 1.0** supports the tested Simple Touch shade family with the XIAO ESP32-S3 + CC1101. Control and physical-remote state tracking have been checked on real hardware and in Home Assistant. See [testing status](docs/testing.md) for the validation scope.
 
 ## What you get
 

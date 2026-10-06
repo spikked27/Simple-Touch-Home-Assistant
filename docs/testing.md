@@ -1,6 +1,6 @@
 # Testing status
 
-Version 0.4.0 prepares the v1.0 release. Keep these evidence levels separate.
+Version 1.0.0 supports the tested Simple Touch hardware. These are separate evidence levels, not a claim of universal RF compatibility.
 
 ## Verified on a physical shade with the radio-lab firmware
 
@@ -53,9 +53,14 @@ Version 0.4.0 prepares the v1.0 release. Keep these evidence levels separate.
 
 - Webpage Open/Stop, Close/Stop and Favorite were retested after the receiver change; the user confirmed all controls worked.
 
-## Remaining release checks
+## Home Assistant live validation
 
-- Install the updated integration in the user's Home Assistant and verify physical-remote state changes there.
+- Updated the installed integration through HACS and restarted Home Assistant. Both configured shades remained available.
+- Verified a physical Stop in the live States interface: `open`, `last_command: stop`, `assumed_position: partial`, `state_source: physical_remote`, and no percentage position.
+- The user confirmed Home Assistant response was very fast after the integration update.
+
+## Compatibility scope
+
 - Longer range/interference testing and compatibility with additional shade models remain community validation work.
 
 No position feedback or universal Dooya compatibility is claimed. Mock tests, builds and user-observed motor tests are recorded separately.

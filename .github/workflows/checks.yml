@@ -89,3 +89,37 @@ jobs:
       - name: Publish installer
         id: deployment
         uses: actions/deploy-pages@v4
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [publish-installer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: simple-touch-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: browser-installer
+          path: release-assets
+      - name: Publish a new stable version after all checks and installer deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version site/manifest.json)
+          [[ "$version" =~ ^[1-9][0-9]*\.[0-9]+\.[0-9]+$ ]] || exit 0
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving it unchanged."
+            exit 0
+          fi
+          test -f "docs/releases/$version.md"
+          cp release-assets/firmware.bin release-assets/simple-touch-esp32s3-install.bin
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Simple Touch $tag" \
+            --notes-file "docs/releases/$version.md" \
+            release-assets/simple-touch-esp32s3-update.bin \
+            release-assets/simple-touch-esp32s3-install.bin \
+            release-assets/updates.json
