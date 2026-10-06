@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import BridgeApi, BridgeAuthError, BridgeError
 from .const import CONF_HOST, CONF_KEY, DOMAIN
 
-PLATFORMS = [Platform.COVER, Platform.BUTTON]
+PLATFORMS = [Platform.COVER, Platform.BUTTON, Platform.UPDATE]
 
 
 class BridgeCoordinator(DataUpdateCoordinator):

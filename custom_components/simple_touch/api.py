@@ -12,6 +12,10 @@ class BridgeAuthError(BridgeError):
     """The bridge key was rejected."""
 
 
+class BridgeUpdateUncertain(BridgeError):
+    """Upload connection was lost; check the version instead of retrying."""
+
+
 def normalize_host(value: str) -> str:
     value = value.strip().rstrip("/")
     if "://" not in value:
@@ -68,3 +72,19 @@ class BridgeApi:
         if data.get("sent") is not True:
             raise BridgeError("Bridge did not confirm transmission")
         return data
+
+    async def upload_firmware(self, image: bytes, sha256: str) -> None:
+        form = aiohttp.FormData()
+        form.add_field("firmware", image, filename="simple-touch-update.bin",
+                       content_type="application/octet-stream")
+        try:
+            async with self.session.post(self.host + "/api/update", data=form,
+                headers={"Authorization": "Bearer " + self.key,
+                         "X-Firmware-SHA256": sha256, "X-Firmware-Size": str(len(image))},
+                timeout=aiohttp.ClientTimeout(total=120), allow_redirects=False) as response:
+                if response.status in (401, 403):
+                    raise BridgeAuthError("Bridge key rejected")
+                if response.status != 200 or (await response.json()).get("restarting") is not True:
+                    raise BridgeError("Bridge rejected the firmware update")
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise BridgeUpdateUncertain("Update connection interrupted; checking installed version") from err

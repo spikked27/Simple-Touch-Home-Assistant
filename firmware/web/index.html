@@ -5,29 +5,30 @@
 </style></head><body>
 <header><div class="brand"><span class="logo" aria-hidden="true"></span>Simple Touch</div><div><span id="connection" class="badge">Connecting</span> <button id="settings" class="quiet" aria-label="Bridge settings">⚙</button></div></header>
 <main><div class="intro"><div><div class="eyebrow">A little more effortless</div><h1>Your shades, in reach.</h1><p>Set the light. Keep the comfort. All controlled locally.</p></div><button class="primary" id="add">＋ Add shade</button></div>
-<div id="notice" class="banner hide" role="status"></div><section id="shades" class="grid" aria-label="Your shades"></section>
+<div id="notice" class="banner hide" role="status"></div><div id="updateNotice" class="banner hide" role="status"><span id="updateNoticeText"></span> <button id="installAvailable" class="primary">Update now</button></div><section id="shades" class="grid" aria-label="Your shades"></section>
 <div class="footer"><span id="bridge">Simple Touch Bridge</span><span>Local control · <span id="latency">Ready when you are</span></span></div></main>
 <dialog id="modal"><div class="dialogtop"><span class="eyebrow" id="modalLabel">Simple Touch</span><button id="close" class="quiet" aria-label="Close dialog">✕</button></div><div id="content"></div><div class="error" id="error" role="alert"></div></dialog><div id="toast" class="toast hide" role="status"></div>
+<script src="updater.js"></script>
 <script>
 'use strict';
 const $=s=>document.querySelector(s),modal=$('#modal');
 const provisionKey=new URLSearchParams(location.hash.slice(1)).get('key');
 if(provisionKey){sessionStorage.setItem('simpletouch-key',provisionKey);history.replaceState(null,'',location.pathname);}
-let key=sessionStorage.getItem('simpletouch-key')||'',state=null,busy=false,pair=null,poll=null,learnTimer=null;
+let key=sessionStorage.getItem('simpletouch-key')||'',state=null,busy=false,pair=null,poll=null,learnTimer=null,release=null,updateCheckError="",checkingUpdate=false,updateInProgress=false;
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(path,body,method){const r=await fetch('/api/'+path,{method:method||(body?'POST':'GET'),headers:{'Authorization':'Bearer '+key,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||'Bridge unavailable');return d;}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.remove('hide');setTimeout(()=>$('#toast').classList.add('hide'),3500);}
 function show(html,label='Simple Touch'){ $('#content').innerHTML=html;$('#modalLabel').textContent=label;$('#error').textContent='';if(!modal.open)modal.showModal();}
 function fail(e){$('#error').textContent=e.message;}
 function button(id,fn){$('#'+id).onclick=async()=>{const el=$('#'+id);el.disabled=true;try{await fn();}catch(e){fail(e);}finally{el.disabled=false;}};}
-function close(){clearTimeout(learnTimer);modal.close();pair=null;}
+function close(){if(updateInProgress)return;clearTimeout(learnTimer);modal.close();pair=null;}
 $('#close').onclick=close;
-modal.addEventListener('cancel',()=>{clearTimeout(learnTimer);pair=null;});
-async function refresh(){try{state=await api('state');$('#connection').textContent=state.wifi_connected?'Connected':'Setup Wi-Fi';$('#bridge').textContent='Simple Touch Bridge · '+state.ip+' · v'+state.version;$('#notice').textContent=state.radio_ready?'':'Radio not detected. Check CC1101 wiring before pairing.';$('#notice').classList.toggle('hide',state.radio_ready);render();}catch(e){$('#connection').textContent='Offline';if(!state&&!modal.open)login();}}
+modal.addEventListener('cancel',e=>{if(updateInProgress){e.preventDefault();return;}clearTimeout(learnTimer);pair=null;});
+async function refresh(){if(updateInProgress)return;try{state=await api('state');$('#connection').textContent=state.wifi_connected?'Connected':'Setup Wi-Fi';$('#bridge').textContent='Simple Touch Bridge · '+state.ip+' · v'+state.version;$('#notice').textContent=state.radio_ready?'':'Radio not detected. Check CC1101 wiring before pairing.';$('#notice').classList.toggle('hide',state.radio_ready);render();renderUpdate();}catch(e){$('#connection').textContent='Offline';if(!state&&!modal.open)login();}}
 function assumed(r){if(r.assumed_state)return ({opening:'Opening · assumed',closing:'Closing · assumed',open:'Open · assumed',closed:'Closed · assumed',partial:'Partially open · assumed',favorite:'Favorite requested',unknown:'Position unknown'})[r.assumed_state]||'Position unknown';return ({up:'Open assumed',down:'Closed assumed',stop:'Stopped · position unknown',favorite:'Favorite requested'})[r.last_command]||'Position unknown';}
 function render(){const list=state.remotes;$('#add').disabled=!state.radio_ready||list.length>=state.max_remotes;$('#shades').innerHTML=list.length?list.map(r=>`<article class="card"><div class="cardtop"><div><h3>${esc(r.name)}</h3><div class="meta">${r.paired?'Paired shade':r.pair_sent?'Check pairing result':'Ready to pair'}</div></div><button class="quiet edit" data-id="${r.id}" aria-label="Settings for ${esc(r.name)}">···</button></div><div class="shade-art" aria-hidden="true"><div class="window"></div></div>${r.paired?`<div class="controls"><button data-id="${r.id}" data-command="up" aria-label="Open ${esc(r.name)}">↑ Open</button><button data-id="${r.id}" data-command="stop" class="stop" aria-label="Stop ${esc(r.name)}">■ Stop</button><button data-id="${r.id}" data-command="down" aria-label="Close ${esc(r.name)}">↓ Close</button></div><button class="quiet" data-id="${r.id}" data-command="favorite" aria-label="Favorite position for ${esc(r.name)}">☆ Favorite position</button><p class="meta">${assumed(r)}${r.state_source==='physical_remote'?' · Physical remote':''}</p><button class="quiet link" data-id="${r.id}">Link physical remote · ${(r.physical||[]).length} linked</button>`:`<button class="primary pair" data-id="${r.id}">${r.pair_sent?'Confirm pairing':'Pair shade'}</button>`}</article>`).join(''):`<div class="empty"><div class="window" aria-hidden="true"></div><h2>Let the light in.</h2><p>Add your first shade. We’ll guide you through pairing.</p><button class="primary" id="first">Add your first shade</button></div>`;
 document.querySelectorAll('.link').forEach(b=>b.onclick=()=>learnRemote(b.dataset.id).catch(e=>toast(e.message)));$('#first')?.addEventListener('click',addShade);document.querySelectorAll('[data-command]').forEach(b=>b.onclick=()=>command(b.dataset.id,b.dataset.command));document.querySelectorAll('.pair').forEach(b=>b.onclick=()=>pairStart(b.dataset.id));document.querySelectorAll('.edit').forEach(b=>b.onclick=()=>edit(b.dataset.id));}
-async function command(id,action){if(busy&&action!=='stop'){toast('Finishing the previous command');return;}busy=true;try{const d=await api(`remotes/${id}/command`,{action});$('#latency').textContent=`Last transmission ${d.duration_ms} ms`;toast(action==='stop'?'Stop sent':action==='up'?'Open sent':action==='favorite'?'Favorite position sent':'Close sent');await refresh();}catch(e){toast(e.message);}finally{busy=false;}}
+async function command(id,action){if(updateInProgress)return;if(busy&&action!=='stop'){toast('Finishing the previous command');return;}busy=true;try{const d=await api(`remotes/${id}/command`,{action});$('#latency').textContent=`Last transmission ${d.duration_ms} ms`;toast(action==='stop'?'Stop sent':action==='up'?'Open sent':action==='favorite'?'Favorite position sent':'Close sent');await refresh();}catch(e){toast(e.message);}finally{busy=false;}}
 function login(){show('<h2>Welcome home.</h2><p>Enter the bridge key from your setup session to connect.</p><label for="key">Bridge key</label><input id="key" type="password" autocomplete="off"><div class="actions"><button class="primary" id="connect">Connect</button></div>','Connect your bridge');button('connect',async()=>{key=$('#key').value.trim();await api('state');sessionStorage.setItem('simpletouch-key',key);close();await refresh();});}
 function addShade(){show('<h2>A name that feels like home.</h2><p>Give this shade a name you’ll recognize in Home Assistant.</p><label for="name">Shade name</label><input id="name" maxlength="48" placeholder="Living room"><div class="actions"><button class="primary" id="create">Continue →</button></div>','Add a shade');button('create',async()=>{const r=await api('remotes',{name:$('#name').value});await refresh();await pairStart(r.id);});$('#name').focus();}
 async function pairStart(id){const r=state.remotes.find(r=>r.id===id);pair={id};if(r.pair_sent){pairResult();return;}try{const d=await api(`remotes/${id}/pair/arm`,{});pair.ticket=d.ticket;show(`<div class="steps"><span class="active"></span><span></span><span></span></div><h2>Pair ${esc(r.name)}.</h2><p>Keep the shade powered and its existing remote nearby.</p><div class="note">Use a remote that already controls this shade. Leave other shades you don’t want to pair powered off.</div><div class="actions"><button class="primary" id="pairReady">I have the remote →</button></div>`,'Pairing · 1 of 3');button('pairReady',pairInstructions);}catch(e){toast(e.message);}}
@@ -46,6 +47,74 @@ async function learnRemote(id){
  learnTimer=setTimeout(check,600);
 }
 $('#add').onclick=addShade;
-$('#settings').onclick=()=>{show(`<h2>Bridge settings</h2><p>Your remotes live on this bridge. Download a backup before replacing it.</p><button id="backup">Download remote backup</button><details><summary>Home Assistant</summary><p>Install Simple Touch through HACS and restart Home Assistant. Open Devices &amp; services, select the discovered bridge, and enter the key below.</p><label for="bridgeKey">Bridge key</label><input id="bridgeKey" type="password" readonly value="${esc(key)}"><button id="copyKey">Copy key</button></details><details open><summary>Wi-Fi</summary><label for="ssid">Network name</label><input id="ssid" autocomplete="off"><label for="password">Password</label><input id="password" type="password" autocomplete="new-password"><div class="actions"><button id="wifi" class="primary">Connect Wi-Fi</button></div><p class="small">Use a 2.4 GHz network. The setup hotspot closes two minutes after connecting.</p></details><details><summary>Restore an existing remote</summary><p class="small">Import one entry from your backup. Keep the old bridge powered off to avoid counter reuse.</p><input id="importFile" type="file" accept="application/json"><div id="imports"></div></details><details><summary>Firmware update</summary><p class="small">Select the application .bin for this board from a Simple Touch release.</p><input id="firmware" type="file" accept=".bin"><button id="update">Install update</button></details><details><summary>Radio calibration</summary><label for="frequency">Frequency in Hz</label><input id="frequency" type="number" value="${state?.frequency_hz||433925000}" min="433000000" max="434790000"><button id="calibrate">Save frequency</button></details>`,'Settings');button('backup',async()=>{const d=await api('backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='simple-touch-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});button('copyKey',async()=>{const input=$('#bridgeKey');input.type='text';input.select();if(navigator.clipboard)await navigator.clipboard.writeText(key);else document.execCommand('copy');toast('Bridge key selected/copied');});button('wifi',async()=>{await api('wifi',{ssid:$('#ssid').value,password:$('#password').value});toast('Connecting… Keep this page open to see the bridge address.');await refresh();});button('calibrate',async()=>{await api('radio',{frequency_hz:Number($('#frequency').value)});toast('Radio setting saved');});$('#importFile').onchange=async e=>{try{const b=JSON.parse(await e.target.files[0].text());if(b.format!==1||!Array.isArray(b.remotes))throw Error('Unsupported backup');$('#imports').innerHTML='';for(const r of b.remotes){const btn=document.createElement('button');btn.textContent='Import '+r.name;btn.onclick=async()=>{btn.disabled=true;try{await api('remotes',r);toast('Imported '+r.name);await refresh();}catch(err){fail(err);btn.disabled=false;}};$('#imports').append(btn);}}catch(e){fail(e);}};button('update',async()=>{const file=$('#firmware').files[0];if(!file)throw Error('Choose a firmware file first');const form=new FormData();form.append('firmware',file);const r=await fetch('/api/update',{method:'POST',headers:{Authorization:'Bearer '+key},body:form});const d=await r.json();if(!r.ok)throw Error(d.error);toast('Update installed. Bridge restarting.');close();});};
-(async()=>{if(!key){try{const r=await fetch('/api/setup-key');if(r.ok){key=(await r.json()).key;sessionStorage.setItem('simpletouch-key',key);}}catch{}}await refresh();poll=setInterval(()=>{if(!busy)refresh();},5000);})();
+$('#settings').onclick=()=>{show(`<h2>Bridge settings</h2><p>Your remotes live on this bridge. Download a backup before replacing it.</p><p class="small"><a href="https://github.com/spikked27/Simple-Touch-Home-Assistant" target="_blank" rel="noopener noreferrer">Simple Touch on GitHub ↗</a></p><section class="note"><strong>Firmware updates</strong><p id="updateStatus" class="small" role="status"></p><button id="checkUpdates">Check for updates</button> <button id="installUpdate" class="primary hide">Update now</button></section><button id="backup">Download remote backup</button><details><summary>Home Assistant</summary><p>Install Simple Touch through HACS and restart Home Assistant. Open Devices &amp; services, select the discovered bridge, and enter the key below.</p><label for="bridgeKey">Bridge key</label><input id="bridgeKey" type="password" readonly value="${esc(key)}"><button id="copyKey">Copy key</button></details><details open><summary>Wi-Fi</summary><label for="ssid">Network name</label><input id="ssid" autocomplete="off"><label for="password">Password</label><input id="password" type="password" autocomplete="new-password"><div class="actions"><button id="wifi" class="primary">Connect Wi-Fi</button></div><p class="small">Use a 2.4 GHz network. The setup hotspot closes two minutes after connecting.</p></details><details><summary>Restore an existing remote</summary><p class="small">Import one entry from your backup. Keep the old bridge powered off to avoid counter reuse.</p><input id="importFile" type="file" accept="application/json"><div id="imports"></div></details><details><summary>Manual firmware upload</summary><p class="small">Optional fallback: select the application .bin for this board.</p><input id="firmware" type="file" accept=".bin"><button id="update">Install update</button></details><details><summary>Radio calibration</summary><label for="frequency">Frequency in Hz</label><input id="frequency" type="number" value="${state?.frequency_hz||433925000}" min="433000000" max="434790000"><button id="calibrate">Save frequency</button></details>`,'Settings');renderUpdate();button('checkUpdates',()=>checkUpdates());button('installUpdate',installLatest);button('backup',async()=>{const d=await api('backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='simple-touch-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});button('copyKey',async()=>{const input=$('#bridgeKey');input.type='text';input.select();if(navigator.clipboard)await navigator.clipboard.writeText(key);else document.execCommand('copy');toast('Bridge key selected/copied');});button('wifi',async()=>{await api('wifi',{ssid:$('#ssid').value,password:$('#password').value});toast('Connecting… Keep this page open to see the bridge address.');await refresh();});button('calibrate',async()=>{await api('radio',{frequency_hz:Number($('#frequency').value)});toast('Radio setting saved');});$('#importFile').onchange=async e=>{try{const b=JSON.parse(await e.target.files[0].text());if(b.format!==1||!Array.isArray(b.remotes))throw Error('Unsupported backup');$('#imports').innerHTML='';for(const r of b.remotes){const btn=document.createElement('button');btn.textContent='Import '+r.name;btn.onclick=async()=>{btn.disabled=true;try{await api('remotes',r);toast('Imported '+r.name);await refresh();}catch(err){fail(err);btn.disabled=false;}};$('#imports').append(btn);}}catch(e){fail(e);}};button('update',async()=>{const file=$('#firmware').files[0];if(!file)throw Error('Choose a firmware file first');await installFirmware(file,null);});};
+function renderUpdate(){
+ const available=release&&state&&SimpleTouchUpdates.newer(release.version,state.version);
+ $('#updateNotice').classList.toggle('hide',!available);
+ $('#updateNoticeText').textContent=available?`Simple Touch ${release.version} is available.`:'';
+ if($('#updateStatus')){
+  $('#updateStatus').textContent=checkingUpdate?'Checking for updates…':updateCheckError||(!state?'Connect to your bridge to check its version.':available?`Version ${release.version} is available. Installed: ${state.version}.`:release?`You’re up to date · ${state.version}`:'Updates are checked automatically while this page is open.');
+  $('#installUpdate').classList.toggle('hide',!available);
+  $('#installUpdate').textContent=available?`Update to ${release.version}`:'Update now';
+  $('#checkUpdates').disabled=checkingUpdate;
+ }
+}
+async function checkUpdates(){
+ if(checkingUpdate||updateInProgress)return;
+ checkingUpdate=true;updateCheckError='';renderUpdate();
+ try{release=await SimpleTouchUpdates.check();}
+ catch(e){updateCheckError='Could not check for updates. Check your internet connection and try again.';}
+ finally{checkingUpdate=false;renderUpdate();}
+}
+function progress(message){if($('#updateProgress'))$('#updateProgress').textContent=message;}
+async function uploadFirmware(file,manifest){
+ const form=new FormData();form.append('firmware',file,'simple-touch-update.bin');
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();xhr.open('POST','/api/update');xhr.timeout=120000;
+  xhr.setRequestHeader('Authorization','Bearer '+key);
+  xhr.setRequestHeader('X-Firmware-Size',String(file.size));
+  if(manifest)xhr.setRequestHeader('X-Firmware-SHA256',manifest.sha256);
+  xhr.upload.onprogress=e=>{if(e.lengthComputable)progress(`Installing… ${Math.round(e.loaded/e.total*100)}%`);};
+  xhr.onload=()=>{try{const d=JSON.parse(xhr.responseText);if(xhr.status!==200||!d.restarting)reject(Error(d.error||'Firmware update was rejected.'));else resolve();}catch{reject(Error('The bridge returned an unexpected response.'));}};
+  xhr.onerror=xhr.ontimeout=()=>reject(Error('Connection interrupted. Checking whether the bridge restarted…'));
+  xhr.send(form);
+ });
+}
+async function waitForRestart(before,expected){
+ const deadline=Date.now()+90000;
+ while(Date.now()<deadline){
+  await new Promise(resolve=>setTimeout(resolve,2000));
+  try{const r=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(4000)});if(!r.ok)continue;const d=await r.json();
+   if(d.boot_id&&d.boot_id!==before.boot_id&&(!expected||d.version===expected))return d;
+  }catch{}
+ }
+ throw Error('The bridge has not confirmed the update yet. Check its power and Wi-Fi, then refresh this page. Do not repeat the upload until you have checked the installed version.');
+}
+async function installFirmware(file,manifest){
+ if(updateInProgress)return;
+ updateInProgress=true;busy=true;clearTimeout(learnTimer);
+ show('<h2>Updating your bridge.</h2><p>Your shades, remote links and Wi-Fi settings will be kept.</p><p id="updateProgress" role="status">Preparing…</p><div class="note">Keep the bridge powered and this page open until the update finishes.</div>','Firmware update');
+ $('#close').disabled=true;
+ try{
+  const response=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw Error('Bridge unavailable');const before=await response.json();
+  if(manifest){progress('Downloading firmware…');file=await SimpleTouchUpdates.download(manifest);}
+  let uploadError=null;
+  try{await uploadFirmware(file,manifest);}catch(e){uploadError=e;}
+  progress('Waiting for the bridge to restart…');
+  // Never automatically retry an upload after an ambiguous connection failure.
+  if(uploadError&&!uploadError.message.startsWith('Connection interrupted'))throw uploadError;
+  const installed=await waitForRestart(before,manifest?.version);
+  progress(`Updated to ${installed.version}. Reloading…`);
+  updateInProgress=false;location.reload();
+ }catch(e){$('#error').textContent=e.message;progress('Update not confirmed. Your saved shade configuration is retained.');}
+ finally{updateInProgress=false;busy=false;$('#close').disabled=false;}
+}
+async function installLatest(){
+ if(!release||!state||!SimpleTouchUpdates.newer(release.version,state.version)||updateInProgress)return;
+ await installFirmware(null,release);
+}
+$('#installAvailable').onclick=installLatest;
+window.addEventListener('beforeunload',e=>{if(updateInProgress){e.preventDefault();e.returnValue='';}});
+
+(async()=>{if(!key){try{const r=await fetch('/api/setup-key');if(r.ok){key=(await r.json()).key;sessionStorage.setItem('simpletouch-key',key);}}catch{}}await refresh();checkUpdates();setInterval(checkUpdates,30*60*1000);poll=setInterval(()=>{if(!busy)refresh();},5000);})();
 </script></body></html>

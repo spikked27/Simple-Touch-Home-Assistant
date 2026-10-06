@@ -1,6 +1,6 @@
 # Testing status
 
-Version 0.2.0 is experimental. Keep these evidence levels separate.
+Version 0.3.0 is experimental. Keep these evidence levels separate.
 
 ## Verified on a physical shade with the radio-lab firmware
 
@@ -32,6 +32,14 @@ Version 0.2.0 is experimental. Keep these evidence levels separate.
 - Physical-remote linking is visible on each shade card.
 - Home Assistant mDNS discovery pre-fills the bridge address and prompts only for its key.
 - Automated tests cover timer boundaries, repeats, reversals, clock rollover, and Home Assistant discovery flows.
+
+## Version 0.3.0 changes
+
+- GitHub project link and firmware updates in Bridge settings.
+- Automatic browser update checks and one-click download/upload/restart flow.
+- Home Assistant firmware Update entity with hourly checks and installation; HACS manages integration updates separately.
+- Release metadata pins the board, image size and SHA-256; the ESP32 verifies the digest before activating firmware.
+- Automated tests cover release validation, version ordering, credential isolation, malformed downloads and generated package metadata.
 
 ## Still requires live validation
 

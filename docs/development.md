@@ -54,3 +54,7 @@ All endpoints except `/`, `/api/status`, and AP-only `/api/setup-key` require `A
 - `POST /api/wifi`, `/api/radio`, `/api/restart`; multipart `POST /api/update` for application firmware.
 
 Pending pairing state survives restart. A repeated send is rejected until its result is resolved. Deletion leaves a counter tombstone to prevent accidental identity reuse. Lost/reset flash requires restoring from a recent backup or pairing new identities. A backup should be taken after stopping use of the original bridge, and restored to a fresh replacement; it is not a synchronization mechanism.
+
+## Browser firmware updates
+
+`package_update.py` generates `site/updates.json` and a SHA-256-addressed application image. Pages publication waits for all checks. The browser fetches only the fixed public Pages origin with credentials omitted, then uploads to the local bridge with its existing bearer key. The authenticated update route checks `X-Firmware-Size` and `X-Firmware-SHA256` before `Update.end`; SHA-256 is integrity checking, not firmware signing. No remote identities, Wi-Fi settings, or keys are sent to GitHub. `GET /api/status` includes a per-boot nonce so the page can confirm restart.

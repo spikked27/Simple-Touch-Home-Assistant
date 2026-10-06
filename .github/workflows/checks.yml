@@ -15,6 +15,7 @@ jobs:
       - run: g++ -std=c++17 -Wall -Wextra -Werror tests/protocol_test.cpp -o /tmp/protocol-test && /tmp/protocol-test
       - run: g++ -std=c++17 -Wall -Wextra -Werror tests/motion_test.cpp -o /tmp/motion-test && /tmp/motion-test
       - run: python -m compileall -q custom_components
+      - run: node --test tests/updater_test.cjs
       - run: python scripts/embed_web.py && git diff --exit-code firmware/simple_touch/web_ui.h
   ha-tests:
     runs-on: ubuntu-latest
@@ -54,6 +55,7 @@ jobs:
           arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3:USBMode=hwcdc,FlashMode=dio --library /tmp/ArduinoJson --library /tmp/ImprovWiFi --output-dir build firmware/simple_touch
           cp build/simple_touch.ino.merged.bin site/firmware.bin
           cp build/simple_touch.ino.bin site/simple-touch-esp32s3-update.bin
+          python scripts/package_update.py
       - uses: actions/upload-artifact@v4
         with:
           name: xiao-esp32s3-firmware

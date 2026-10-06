@@ -7,11 +7,12 @@
 #include <Update.h>
 #include <ImprovWiFiLibrary.h>
 #include <esp_mac.h>
+#include <mbedtls/sha256.h>
 #include "radio.h"
 #include "motion.h"
 #include "web_ui.h"
 
-constexpr char VERSION[]="0.2.0";
+constexpr char VERSION[]="0.3.0";
 constexpr unsigned MAX_REMOTES=32;
 struct Remote {
   uint32_t address=0,next=0,ceiling=0;
@@ -27,8 +28,12 @@ struct Remote {
 Remote remotes[MAX_REMOTES];
 Preferences prefs;
 WebServer server(80);
-String deviceId,hostname,apiKey,apPassword;
+String deviceId,hostname,apiKey,apPassword,bootId;
 bool radioReady=false,apActive=false,otaAllowed=false;
+bool otaFinished=false;
+String otaError,otaExpectedHash;
+size_t otaBytes=0,otaExpectedSize=0;
+mbedtls_sha256_context otaHash;
 uint32_t apConnectedAt=0,rebootAt=0,frequency=433925000;
 uint32_t lastWifiAttempt=0;
 volatile uint8_t lastWifiDisconnect=0;
@@ -149,9 +154,9 @@ void startAP(){
   Serial.printf("SETUP_AP SimpleTouch-%s password=%s URL=http://192.168.4.1\n",deviceId.substring(deviceId.length()-6).c_str(),apPassword.c_str());
 }
 void routes(){
-  const char* headers[]={"Authorization"};server.collectHeaders(headers,1);
+  const char* headers[]={"Authorization","X-Firmware-SHA256","X-Firmware-Size"};server.collectHeaders(headers,3);
   server.on("/",HTTP_GET,[]{server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",WEB_UI);});
-  server.on("/api/status",HTTP_GET,[]{JsonDocument d;d["device_id"]=deviceId;d["version"]=VERSION;d["api_version"]=1;reply(d);});
+  server.on("/api/status",HTTP_GET,[]{JsonDocument d;d["device_id"]=deviceId;d["version"]=VERSION;d["api_version"]=1;d["boot_id"]=bootId;reply(d);});
   server.on("/api/setup-key",HTTP_GET,[]{
     IPAddress ip=server.client().remoteIP();
     if(!apActive||ip[0]!=192||ip[1]!=168||ip[2]!=4){error(403,"Join the bridge setup Wi-Fi first");return;}
@@ -199,16 +204,54 @@ void routes(){
   server.on("/api/restart",HTTP_POST,[]{if(!auth())return;JsonDocument d;d["restarting"]=true;reply(d);rebootAt=millis()+500;});
   server.on("/api/update",HTTP_POST,[]{
     if(!auth())return;
-    if(!otaAllowed){error(401,"Invalid bridge key");return;}
-    otaAllowed=false;
-    if(Update.hasError()){error(400,"Firmware update failed");return;}
-    JsonDocument d;d["restarting"]=true;reply(d);rebootAt=millis()+500;
+    const bool success=otaAllowed&&otaFinished&&otaError.isEmpty()&&!Update.hasError();
+    otaAllowed=false;otaFinished=false;
+    if(!success){error(400,otaError.isEmpty()?"No complete firmware upload received":otaError.c_str());return;}
+    JsonDocument d;d["restarting"]=true;reply(d);rebootAt=millis()+1000;
   },[]{
     HTTPUpload &u=server.upload();
-    if(u.status==UPLOAD_FILE_START){otaAllowed=server.header("Authorization")=="Bearer "+apiKey;if(otaAllowed)Update.begin(UPDATE_SIZE_UNKNOWN);}
-    else if(otaAllowed&&u.status==UPLOAD_FILE_WRITE)Update.write(u.buf,u.currentSize);
-    else if(otaAllowed&&u.status==UPLOAD_FILE_END)Update.end(true);
-    else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();otaAllowed=false;}
+    if(u.status==UPLOAD_FILE_START){
+      otaAllowed=server.header("Authorization")=="Bearer "+apiKey;
+      otaFinished=false;otaError="";otaBytes=0;otaExpectedSize=0;
+      if(!otaAllowed)return;
+      otaExpectedHash=server.header("X-Firmware-SHA256");otaExpectedHash.toLowerCase();
+      String sizeText=server.header("X-Firmware-Size");
+      if(!otaExpectedHash.isEmpty()){
+        if(otaExpectedHash.length()!=64)otaError="Invalid firmware checksum";
+        for(char c:otaExpectedHash)if(!isxdigit(c))otaError="Invalid firmware checksum";
+        if(sizeText.isEmpty())otaError="Firmware size required";
+      }
+      if(!sizeText.isEmpty()){
+        for(char c:sizeText)if(!isdigit(c))otaError="Invalid firmware size";
+        if(sizeText.length()>7)otaError="Invalid firmware size";
+        otaExpectedSize=sizeText.toInt();
+        if(otaExpectedSize<65536||otaExpectedSize>3342336)otaError="Firmware does not fit this board";
+      }
+      if(!otaError.isEmpty())return;
+      mbedtls_sha256_init(&otaHash);
+      if(mbedtls_sha256_starts(&otaHash,0)!=0)otaError="Could not initialize firmware verification";
+      if(otaError.isEmpty()&&!Update.begin(otaExpectedSize?otaExpectedSize:UPDATE_SIZE_UNKNOWN))otaError="Could not start firmware update";
+    }else if(otaAllowed&&u.status==UPLOAD_FILE_WRITE&&otaError.isEmpty()){
+      otaBytes+=u.currentSize;
+      if((otaExpectedSize&&otaBytes>otaExpectedSize)||mbedtls_sha256_update(&otaHash,u.buf,u.currentSize)!=0||Update.write(u.buf,u.currentSize)!=u.currentSize){
+        otaError="Firmware upload failed";Update.abort();
+      }
+    }else if(otaAllowed&&u.status==UPLOAD_FILE_END){
+      if(otaError.isEmpty()){
+        uint8_t digest[32];char hex[65];
+        if(mbedtls_sha256_finish(&otaHash,digest)!=0)otaError="Firmware verification failed";
+        else {
+          for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);
+          if((otaExpectedSize&&otaBytes!=otaExpectedSize)||(!otaExpectedHash.isEmpty()&&otaExpectedHash!=hex))otaError="Firmware checksum or size did not match";
+        }
+        if(!otaError.isEmpty())Update.abort();
+        else if(!Update.end(true))otaError="Firmware image was not accepted";
+        else otaFinished=true;
+      }
+      mbedtls_sha256_free(&otaHash);
+    }else if(u.status==UPLOAD_FILE_ABORTED&&otaAllowed){
+      Update.abort();mbedtls_sha256_free(&otaHash);otaAllowed=false;otaFinished=false;otaError="Upload interrupted";
+    }
   });
   server.onNotFound([]{
     if(!auth())return;
@@ -288,7 +331,7 @@ void routes(){
   });
 }
 void setup(){
-  Serial.begin(115200);prefs.begin("simpletouch",false);
+  Serial.begin(115200);bootId=randomSecret();prefs.begin("simpletouch",false);
   uint8_t mac[6];esp_read_mac(mac,ESP_MAC_WIFI_STA);char identity[13];
   snprintf(identity,sizeof(identity),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);deviceId=identity;
   hostname="simpletouch-"+deviceId.substring(deviceId.length()-6);

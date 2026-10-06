@@ -63,7 +63,9 @@ If provisioning fails, open the serial console and send `SETUP`. Join the printe
 
 No shade pairing or movement occurs on boot, firmware installation, or Wi-Fi setup.
 
-**Updating an existing bridge:** download the [application update](https://spikked27.github.io/Simple-Touch-Home-Assistant/simple-touch-esp32s3-update.bin), then select it under **Bridge settings → Firmware update**. This preserves your Wi-Fi, paired shades and linked remotes. Export a backup first. Do not erase user data or repeat pairing when updating.
+**Updating an existing bridge:** from v0.3.0 onward, the bridge page checks for updates when opened and every 30 minutes while open. Click **Update now** on the notification or in **Bridge settings → Firmware updates**. The page downloads the tested release, shows upload progress, and reloads after confirming the restart. Shades, physical links and Wi-Fi settings are retained. Update checks need internet access from your browser; shade control stays local.
+
+**First upgrade from v0.1/v0.2, or manual fallback:** download the [application update](https://spikked27.github.io/Simple-Touch-Home-Assistant/simple-touch-esp32s3-update.bin), then select it under **Bridge settings → Firmware update**. This preserves your Wi-Fi, paired shades and linked remotes. Export a backup first. Do not erase user data or repeat pairing when updating.
 
 ### 2. Add a shade
 
@@ -84,6 +86,8 @@ Only the intended shade should be powered during pairing. **The same sequence ca
 4. Paste its key from **Bridge settings → Home Assistant**. Its address is filled in automatically.
 
 Discovery needs local mDNS connectivity between Home Assistant and the bridge. If your network blocks discovery, use **Add integration → Simple Touch** and enter the local address manually.
+
+The bridge also provides a **Firmware** update entity in Home Assistant. It checks hourly and lets you install firmware from Home Assistant’s Updates screen, even when the bridge webpage is closed. HACS separately handles updates to the Simple Touch integration. These are update-available indicators; phone push notifications require a Home Assistant notification automation.
 
 Paired shades appear as cover entities. Newly paired shades are discovered within five seconds; commands are sent immediately rather than waiting for that inventory poll. The integration's Configure page and each shade's device page link back to the bridge interface.
 
