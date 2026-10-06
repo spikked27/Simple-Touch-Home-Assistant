@@ -1,0 +1,53 @@
+name: Checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install aiohttp
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - run: g++ -std=c++17 -Wall -Wextra -Werror tests/protocol_test.cpp -o /tmp/protocol-test && /tmp/protocol-test
+      - run: python -m compileall -q custom_components
+      - run: python scripts/embed_web.py && git diff --exit-code firmware/simple_touch/web_ui.h
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.8
+          git clone --depth 1 --branch v7.4.2 https://github.com/bblanchon/ArduinoJson.git /tmp/ArduinoJson
+          git clone https://github.com/jnthas/Improv-WiFi-Library.git /tmp/ImprovWiFi
+          git -C /tmp/ImprovWiFi checkout e37c244e0080349e191252acf4bce146eca118e0
+          arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3:USBMode=hwcdc,FlashMode=dio --library /tmp/ArduinoJson --library /tmp/ImprovWiFi --output-dir build firmware/simple_touch
+          cp build/simple_touch.ino.merged.bin site/firmware.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiao-esp32s3-firmware
+          path: build/*.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-installer
+          path: site/
