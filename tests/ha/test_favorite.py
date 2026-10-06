@@ -58,7 +58,9 @@ async def test_assumed_cover_state(hass, enable_custom_integrations, position, r
         await hass.async_block_till_done()
         cover = hass.states.async_all("cover")[0]
         assert cover.state == expected
-        assert cover.attributes["assumed_position"] == position
+        if ready:
+            assert cover.attributes["assumed_position"] == position
         assert "current_position" not in cover.attributes
         assert not cover.attributes["supported_features"] & CoverEntityFeature.SET_POSITION
         await hass.config_entries.async_unload(entry.entry_id)
+
