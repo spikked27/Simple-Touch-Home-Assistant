@@ -19,7 +19,9 @@ The RF module uses the Arduino ESP32 RMT peripheral at 1 MHz with 25 microsecond
 
 The build produces `simple_touch.ino.merged.bin`. Copy it to `site/firmware.bin` after validating flash mode and board settings. `simple_touch.ino.bin` is the application-only image for authenticated web OTA. Keep filenames and manifest versions aligned. Never distribute a full flash dump: it can contain saved Wi-Fi credentials, bridge keys and paired identities.
 
-Serve `site/` from HTTPS, such as GitHub Pages, or use a localhost HTTP server for development. GitHub Actions packages the installer as a downloadable artifact. Public Pages deployment must be enabled for the repository before its Pages URL is advertised as live.
+The Checks workflow builds the firmware and publishes `site/` to GitHub Pages only after tests, hassfest, HACS validation, and firmware compilation pass. Repository maintainers enable this once under **Settings → Pages → Build and deployment → Source → GitHub Actions**. Pull requests never publish the installer.
+
+End users visit the hosted installer directly. They do not download the website, run a local server, or install Arduino tools. A localhost server is only useful for developing this page. The browser-installer artifact remains available for maintainers and offline hosting.
 
 ## Home Assistant
 

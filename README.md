@@ -2,6 +2,8 @@
 
 Local Home Assistant control for Simple Touch motorized shades, using an ESP32 and CC1101.
 
+[![Install firmware](https://img.shields.io/badge/Install_firmware-Open_browser_installer-285d49?style=for-the-badge)](https://spikked27.github.io/Simple-Touch-Home-Assistant/)
+
 [![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=spikked27&repository=Simple-Touch-Home-Assistant&category=integration)
 [![Checks](https://github.com/spikked27/Simple-Touch-Home-Assistant/actions/workflows/checks.yml/badge.svg)](https://github.com/spikked27/Simple-Touch-Home-Assistant/actions/workflows/checks.yml)
 
@@ -17,7 +19,7 @@ Local Home Assistant control for Simple Touch motorized shades, using an ESP32 a
 - Browser Wi-Fi provisioning via Improv Serial, plus an authenticated setup hotspot fallback.
 - Remote backup/import and authenticated firmware updates from the bridge interface.
 
-There is **no motor position feedback**. Open and Close set an assumed endpoint state; Stop and Favorite leave the position unknown. There is no percentage slider. The bridge can listen for linked physical remotes between its own transmissions; this listener still needs live validation. Missed RF commands, power loss and obstructions can make assumed states inaccurate. Speed, limit adjustment and motor-reset commands are not exposed.
+There is **no motor position feedback**. Open and Close set an assumed endpoint state; Stop and Favorite leave the position unknown. There is no percentage slider. The bridge can listen for linked physical remotes between its own transmissions; physical-remote reception and bridge state updates have been verified on the tested hardware. Missed RF commands, power loss and obstructions can make assumed states inaccurate. Speed, limit adjustment and motor-reset commands are not exposed.
 
 To link a physical remote, open the shade’s settings, choose **Physical remotes → Link physical remote**, and briefly tap **STOP** on the existing remote. Confirm the detected remote. This only records a mapping in the bridge; it does not change motor pairing. Use the same channel you normally use for that shade. Up to eight physical remote/channel links can be stored per shade.
 
@@ -53,7 +55,7 @@ HACS installs the **Home Assistant integration**, not ESP32 firmware. Install bo
 
 ### 1. Install the bridge firmware
 
-Use the browser installer supplied with the project at `site/index.html`, served from HTTPS or localhost. Release packaging instructions are in [development](docs/development.md). The firmware artifact is also built by GitHub Actions.
+Open the [Simple Touch installer](https://spikked27.github.io/Simple-Touch-Home-Assistant/) in desktop Chrome or Edge. You do not need to download this repository, install Arduino tools, or run a web server.
 
 Connect the XIAO using a USB data cable. Close other serial monitors, choose Install, and select its serial port in Chrome or Edge. After flashing, use the installer's Wi-Fi setup to select a 2.4 GHz network. **Visit device** opens the bridge with your session already authorized.
 
@@ -85,9 +87,9 @@ Home Assistant must be able to reach the ESP32 on your LAN. Keep the bridge on a
 
 ## Performance and reliability
 
-The RF sequence itself takes roughly 0.2–0.45 seconds. The bridge generates it locally and begins transmission without a host-side waveform upload. One radio serializes commands; a second request can wait for the current RF sequence to finish. The UI reports measured transmission duration. End-to-end latency still depends on Wi-Fi and the motor; no measured latency guarantee is claimed yet.
+The RF sequence itself takes roughly 0.2–0.45 seconds. The bridge generates it locally and begins transmission without a host-side waveform upload. One radio serializes commands; a second request can wait for the current RF sequence to finish. The UI reports measured transmission duration. Measured local API round trips, including RF transmission completion, were about 0.49–0.52 seconds for Open/Close, 0.39–0.41 seconds for Stop, and 0.27 seconds for Favorite. These are not measurements of motor response time; Home Assistant end-to-end testing is still pending.
 
-Counters are reserved in blocks in NVS before transmission. A restart skips unused values rather than reusing them. At counter exhaustion, commands fail explicitly; they do not silently wrap. This skip behavior requires live reboot validation on the target motor. A backup must not be used on two active bridges with the same remote identities.
+Counters are reserved in blocks in NVS before transmission. A restart skips unused values rather than reusing them. At counter exhaustion, commands fail explicitly; they do not silently wrap. The tested motor accepted commands after a restart and counter skip. A backup must not be used on two active bridges with the same remote identities.
 
 ## Protocol and attribution
 

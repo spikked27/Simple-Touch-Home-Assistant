@@ -15,6 +15,11 @@ Version 0.1.0 is experimental. Keep these evidence levels separate.
 - XIAO ESP32-S3 firmware compiles against Arduino ESP32 3.3.8.
 - Firmware flashed and booted on the XIAO ESP32-S3 with DIO flash mode. USB encoder/decoder self-test passes.
 - CC1101 received and decoded all three packets from one physical Remote 1 STOP press.
+- Browser-based Improv Wi-Fi provisioning completed on the board.
+- The standalone bridge's Wi-Fi API controlled Open/Stop, Close/Stop, and Favorite, with user-observed motor movement.
+- Physical Remote 1 was linked using STOP; subsequent received commands updated the bridge state with `physical_remote` as the source.
+- The virtual identity, physical remote link, and radio calibration survived restart. Commands remained accepted after the counter jumped to its reserved value.
+- Observed local HTTP round trips were about 0.49–0.52 seconds for Open/Close, 0.39–0.41 seconds for Stop, and 0.27 seconds for Favorite. These include transmission completion, not a measurement of when the motor begins moving.
 - Web interface add/pair/confirm and ordinary controls exercised against an isolated fixture.
 - Favorite button and STOP-based physical-remote linking exercised against an isolated fixture.
 - HTTP client tests cover authentication, malformed inventory, no credential redirects, no automatic command retries, and transmission acknowledgements.
@@ -22,10 +27,8 @@ Version 0.1.0 is experimental. Keep these evidence levels separate.
 
 ## Still requires live validation
 
-- Standalone firmware RF timing and latency on the physical bridge.
-- Wi-Fi provisioning and OTA update on the board.
+- OTA update through the bridge web interface.
 - Home Assistant entity setup, automatic discovery of newly paired shades, unavailable/recovery behavior and reboot persistence.
-- Counter reservation jumps across reboot on the motor.
 - Multiple shades, range and coexistence with physical remotes.
 - Physical-remote mapping and Home Assistant state updates end to end.
 
