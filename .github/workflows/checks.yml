@@ -53,6 +53,7 @@ jobs:
           git -C /tmp/ImprovWiFi checkout e37c244e0080349e191252acf4bce146eca118e0
           arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3:USBMode=hwcdc,FlashMode=dio --library /tmp/ArduinoJson --library /tmp/ImprovWiFi --output-dir build firmware/simple_touch
           cp build/simple_touch.ino.merged.bin site/firmware.bin
+          cp build/simple_touch.ino.bin site/simple-touch-esp32s3-update.bin
       - uses: actions/upload-artifact@v4
         with:
           name: xiao-esp32s3-firmware

@@ -63,6 +63,8 @@ If provisioning fails, open the serial console and send `SETUP`. Join the printe
 
 No shade pairing or movement occurs on boot, firmware installation, or Wi-Fi setup.
 
+**Updating an existing bridge:** download the [application update](https://spikked27.github.io/Simple-Touch-Home-Assistant/simple-touch-esp32s3-update.bin), then select it under **Bridge settings → Firmware update**. This preserves your Wi-Fi, paired shades and linked remotes. Export a backup first. Do not erase user data or repeat pairing when updating.
+
 ### 2. Add a shade
 
 Open the bridge web interface and choose **Add shade**. Name it, then follow the pairing guide:
